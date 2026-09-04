@@ -78,9 +78,11 @@
     <section class="stage">
       <div class="stage-video">
       <div class="video-wrap" id="video-wrap">
-        <video id="video" playsinline preload="metadata"></video>
-        <div id="yt-holder"></div>
-        <canvas id="draw-canvas"></canvas>
+        <div class="rotor" id="rotor">
+          <video id="video" playsinline preload="metadata"></video>
+          <div id="yt-holder"></div>
+          <canvas id="draw-canvas"></canvas>
+        </div>
 
         <div class="player-hud" id="player-hud">
           <button type="button" class="hud-btn" id="play-btn" disabled title="Play / pause (space)">
@@ -101,6 +103,14 @@
             <span class="sr">Play until the next note</span>
           </button>
           <span class="hud-time mono" id="time-display">0:00 / 0:00</span>
+
+          <button type="button" class="hud-btn hud-rate" id="rate-btn" disabled
+                  title="Playback speed - click to cycle">1&times;</button>
+          <button type="button" class="hud-btn" id="rotate-btn" disabled
+                  title="Rotate the video (R)">
+            <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M13.5 8a5.5 5.5 0 1 1-1.9-4.2M13.5 1.5v3h-3"/></svg>
+            <span class="sr">Rotate the video</span>
+          </button>
 
           <span class="hud-sound" id="hud-sound">
             <button type="button" class="hud-btn" id="mute-btn" disabled title="Mute / unmute (M)">

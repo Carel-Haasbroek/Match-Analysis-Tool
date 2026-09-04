@@ -6,9 +6,52 @@
   "main": "electron/main.js",
   "scripts": {
     "start": "electron .",
-    "test": "node electron/selftest.js"
+    "test": "node electron/selftest.js",
+    "dist": "electron-builder"
   },
   "devDependencies": {
-    "electron": "^33.0.0"
+    "electron": "^33.0.0",
+    "electron-builder": "^25.1.8"
+  },
+  "build": {
+    "appId": "com.videonotes.app",
+    "productName": "Video Notes",
+    "directories": {
+      "output": "dist"
+    },
+    "files": [
+      "electron/main.js",
+      "electron/preload.js",
+      "electron/server.js",
+      "electron/store.js",
+      "video-notes.html",
+      "styles.css",
+      "app.js",
+      "package.json"
+    ],
+    "win": {
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        },
+        {
+          "target": "portable",
+          "arch": [
+            "x64"
+          ]
+        }
+      ]
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "shortcutName": "Video Notes"
+    },
+    "portable": {
+      "artifactName": "VideoNotes-${version}-portable.exe"
+    }
   }
 }

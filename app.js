@@ -20,6 +20,7 @@
   var playerHud = $('player-hud'), nextNoteBtn = $('next-note-btn'), autoPauseBox = $('auto-pause');
   var noteView = $('note-view'), noteViewTime = $('note-view-time'), noteViewText = $('note-view-text');
   var muteBtn = $('mute-btn'), volumeRange = $('volume');
+  var rotor = $('rotor'), rotateBtn = $('rotate-btn'), rateBtn = $('rate-btn');
   var summaryModal = $('summary-modal'), summaryModalText = $('summary-modal-text');
   var lightbox = $('lightbox'), lightboxImg = $('lightbox-img'), lightboxTime = $('lightbox-time'),
       lightboxText = $('lightbox-text');
@@ -32,6 +33,8 @@
   var overlayTimer = null, overlayEndsAt = 0, overlayRemaining = 0, lastSyncTime = 0;
   var autoPause = false, playTarget = null, panelNoteId = null, notePanelOpen = true;
   var volume = 1, muted = false;
+  var rotation = 0, rate = 1;
+  var RATES = [1, 0.5, 0.25];
   var hudIdleTimer = null;
   var activePane = 'notes';
 
@@ -269,12 +272,24 @@
       return video.videoWidth ? { w: video.videoWidth, h: video.videoHeight } : null;
     };
     api.getTitle = function(){ return ''; };
+    api.getRate = function(){ return video.playbackRate; };
+    api.setRate = function(r){ video.playbackRate = r; };
     api.getVolume = function(){ return video.volume; };            /* 0..1 */
     api.setVolume = function(v){ video.volume = v; };
     api.isMuted = function(){ return video.muted; };
     api.setMuted = function(m){ video.muted = !!m; };
     api.canCaptureFrame = function(){ return true; };
-    api.captureFrame = function(c, w, h){ c.drawImage(video, 0, 0, w, h); };
+    api.captureFrame = function(c, w, h, deg){
+      if (!deg){ c.drawImage(video, 0, 0, w, h); return; }
+      /* draw into a canvas already sized for the rotated result */
+      c.save();
+      c.translate(w / 2, h / 2);
+      c.rotate(deg * Math.PI / 180);
+      var dw = (deg === 90 || deg === 270) ? h : w;
+      var dh = (deg === 90 || deg === 270) ? w : h;
+      c.drawImage(video, -dw / 2, -dh / 2, dw, dh);
+      c.restore();
+    };
     api.destroy = function(){
       video.removeEventListener('loadedmetadata', onMeta);
       video.removeEventListener('timeupdate', onTU);
@@ -330,7 +345,7 @@
        PLAYING state gets pushed back to paused. */
     var pauseRequested = false, repauseUntil = 0;
     /* Volume can be set before the iframe API is ready; apply it on load. */
-    var pendingVolume = 1, pendingMuted = false;
+    var pendingVolume = 1, pendingMuted = false, pendingRate = 1;
 
     video.style.display = 'none';
     ytHolder.style.display = 'block'; /* the stylesheet hides it by default */
@@ -359,6 +374,7 @@
             try{
               yt.setVolume(Math.round(pendingVolume * 100));
               if (pendingMuted) yt.mute(); else yt.unMute();
+              yt.setPlaybackRate(pendingRate);
             }catch(e){}
             if (startAt) yt.seekTo(startAt, true);
             timer = setInterval(tick, 150);
@@ -430,6 +446,13 @@
     api.getDuration = function(){ return dur; };
     api.getAspect = function(){ return null; };
     api.getTitle = function(){ return title; };
+    api.getRate = function(){
+      return (yt && yt.getPlaybackRate) ? yt.getPlaybackRate() : pendingRate;
+    };
+    api.setRate = function(r){
+      pendingRate = r;
+      if (yt && yt.setPlaybackRate) yt.setPlaybackRate(r);
+    };
     /* YouTube speaks 0..100; the rest of the app speaks 0..1. */
     api.getVolume = function(){
       return (yt && yt.getVolume) ? (yt.getVolume() / 100) : pendingVolume;
@@ -483,12 +506,14 @@
     fileNameEl.title = src.url || src.label;
     hideStart();
 
-    [playBtn, backBtn, fwdBtn, nextNoteBtn, markBtn, seek, muteBtn, volumeRange]
-      .forEach(function(el){ el.disabled = false; });
+    [playBtn, backBtn, fwdBtn, nextNoteBtn, markBtn, seek, muteBtn, volumeRange,
+     rotateBtn, rateBtn].forEach(function(el){ el.disabled = false; });
     videoWrap.style.setProperty('--ar', 16/9);
     seek.value = 0;
     seek.max = 100;
     playerHud.classList.remove('playing');
+    rate = 1;
+    rotation = 0;
     noticeUntil = 0; /* a new source supersedes any notice about the previous one */
     setStatus(src.kind === 'youtube' ? 'Loading the YouTube player…' : '');
 
@@ -496,8 +521,8 @@
     applySound();
 
     p.onReady = function(){
-      var a = p.getAspect();
-      if (a && a.w && a.h) videoWrap.style.setProperty('--ar', a.w / a.h);
+      applyRotation();     /* sets --ar from the real dimensions, turned if needed */
+      applyRate();
       var d = p.getDuration();
       if (d) seek.max = d;
       var t = p.getTitle();
@@ -540,6 +565,9 @@
       renderMarks();
       touchLibrary();
       refreshName();
+      var e = entryFor(videoKey);
+      rotation = (e && typeof e.rotation === 'number') ? e.rotation : 0;
+      applyRotation();
       /* set last: renderNotes() rewrites the status line */
       if (pendingNotice){ setNotice(pendingNotice); pendingNotice = ''; }
     });
@@ -883,6 +911,7 @@
     if (e.key === 'ArrowRight') fwdBtn.click();
     if (e.key === 'n' || e.key === 'N') playToNextNote();
     if (e.key === 'm' || e.key === 'M') muteBtn.click();
+    if (e.key === 'r' || e.key === 'R') rotateBtn.click();
   });
 
   /* ---------- draw mode ---------- */
@@ -898,6 +927,7 @@
 
     var a = player.getAspect();
     var vw = (a && a.w) || 960, vh = (a && a.h) || 540;
+    if (quarterTurned()){ var sw = vw; vw = vh; vh = sw; }   /* drawing space follows the picture */
     var scale = Math.min(1, 960 / vw);
     var w = Math.round(vw * scale), h = Math.round(vh * scale);
     canvas.width = w; canvas.height = h;
@@ -905,7 +935,7 @@
 
     hasFrame = false;
     if (player.canCaptureFrame()){
-      try{ player.captureFrame(fctx, w, h); hasFrame = true; }
+      try{ player.captureFrame(fctx, w, h, rotation); hasFrame = true; }
       catch(err){ setNotice('Could not capture this frame.'); }
     }
     drawHint.textContent = hasFrame
@@ -986,11 +1016,26 @@
     return c.toDataURL('image/jpeg', 0.72);
   }
 
+  /* getBoundingClientRect on a rotated element gives the axis-aligned bounding box,
+     not the rotated frame, so at 90/270 the naive mapping puts strokes in the wrong
+     place. Work from the rect's centre and undo the rotation. */
   function pointAt(e){
     var r = canvas.getBoundingClientRect();
+    var cx = r.left + r.width / 2, cy = r.top + r.height / 2;
+    var dx = e.clientX - cx, dy = e.clientY - cy;
+
+    var rad = -rotation * Math.PI / 180;          /* inverse */
+    var cos = Math.cos(rad), sin = Math.sin(rad);
+    var lx = dx * cos - dy * sin;                 /* local, still centre-origin */
+    var ly = dx * sin + dy * cos;
+
+    /* the drawn box's on-screen size, with axes swapped at a quarter turn */
+    var boxW = quarterTurned() ? r.height : r.width;
+    var boxH = quarterTurned() ? r.width : r.height;
+
     return {
-      x: (e.clientX - r.left) * (canvas.width / r.width),
-      y: (e.clientY - r.top) * (canvas.height / r.height)
+      x: (lx + boxW / 2) * (canvas.width / boxW),
+      y: (ly + boxH / 2) * (canvas.height / boxH)
     };
   }
 
@@ -1230,6 +1275,7 @@
 
     var a = player && player.getAspect();
     var vw = (a && a.w) || 960, vh = (a && a.h) || 540;
+    if (quarterTurned()){ var sw = vw; vw = vh; vh = sw; }
     var scale = Math.min(1, 960 / vw);
     canvas.width = Math.round(vw * scale);
     canvas.height = Math.round(vh * scale);
@@ -1535,6 +1581,67 @@
     if (!muted && volume === 0){ volume = 0.5; }
     applySound();
     savePrefs();
+  });
+
+
+  /* ---------- playback rate ---------- */
+  /* Not persisted: opening a match already in slow motion would be a surprise, and
+     <video> resets playbackRate on a source change anyway. */
+  function applyRate(){
+    if (player && player.setRate) player.setRate(rate);
+    rateBtn.textContent = (rate === 1 ? '1' : String(rate)) + '×';
+    rateBtn.classList.toggle('slow', rate !== 1);
+  }
+  rateBtn.addEventListener('click', function(){
+    rate = RATES[(RATES.indexOf(rate) + 1) % RATES.length];
+    applyRate();
+  });
+
+  /* ---------- rotation ---------- */
+  /* The rotor holds the video and the canvas, so both turn together and a drawing
+     stays on the thing it marks. Two consequences handled below: at 90/270 the box
+     ratio inverts, and the rotor has to be sized with width and height swapped —
+     a rotated 100%x100% box cannot be made to fill by any uniform scale. */
+  function quarterTurned(){ return rotation === 90 || rotation === 270; }
+
+  function baseAspect(){
+    var a = player && player.getAspect && player.getAspect();
+    return (a && a.w && a.h) ? (a.w / a.h) : (16 / 9);
+  }
+
+  function applyRotation(){
+    var ar = baseAspect();
+    videoWrap.style.setProperty('--ar', quarterTurned() ? (1 / ar) : ar);
+    rotor.style.setProperty('--rot', rotation + 'deg');
+    sizeRotor();
+    rotateBtn.classList.toggle('slow', rotation !== 0);
+    rotateBtn.title = 'Rotate the video (R) — now ' + rotation + '°';
+  }
+
+  function sizeRotor(){
+    var r = videoWrap.getBoundingClientRect();
+    if (!r.width || !r.height) return;
+    /* swapped at a quarter turn, so the rotated picture fills the box exactly */
+    var w = quarterTurned() ? r.height : r.width;
+    var h = quarterTurned() ? r.width : r.height;
+    rotor.style.width = w + 'px';
+    rotor.style.height = h + 'px';
+  }
+
+  if (typeof ResizeObserver === 'function'){
+    new ResizeObserver(function(){ sizeRotor(); }).observe(videoWrap);
+  } else {
+    window.addEventListener('resize', sizeRotor);
+  }
+
+  rotateBtn.addEventListener('click', function(){
+    if (!player) return;
+    rotation = (rotation + 90) % 360;
+    applyRotation();
+    var e = videoKey ? entryFor(videoKey) : null;
+    if (e){ e.rotation = rotation; saveLibrary(); }
+    overlayKey = null;
+    syncOverlay(player.getTime(), true);
   });
 
   /* ---------- highlighting the note playback has reached ---------- */
