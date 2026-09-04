@@ -17,7 +17,7 @@
       <input type="text" id="top-url-input" placeholder="Paste a YouTube link" spellcheck="false" aria-label="YouTube link">
       <button type="submit">Open</button>
     </form>
-    <button type="button" id="recent-btn">Recent</button>
+    <button type="button" id="recent-btn">Home</button>
     <label class="switch" title="Pause playback automatically whenever a note's moment is reached">
       <input type="checkbox" id="auto-pause">
       <span class="switch-track" aria-hidden="true"><span class="switch-knob"></span></span>
@@ -28,8 +28,54 @@
     <span class="status" id="status"></span>
   </header>
 
+
+  <main class="home" id="home">
+    <div class="home-inner">
+      <section class="home-open">
+        <h3>Open a match</h3>
+        <form class="url-field big" id="start-url-form">
+          <input type="text" id="url-input" placeholder="https://www.youtube.com/watch?v=&hellip;" spellcheck="false" aria-label="YouTube link">
+          <button type="submit" class="primary">Open link</button>
+        </form>
+        <div class="or">or</div>
+        <button type="button" id="empty-load-btn">Choose a video file</button>
+        <p class="home-hint">Your notes stay on this device &mdash; nothing is uploaded.</p>
+
+        <div class="file-note hidden" id="file-note">
+          <strong>YouTube links need a local server.</strong>
+          This page is open straight from a file, and YouTube refuses to embed into a
+          <code>file://</code> page (it answers with &ldquo;error 153&rdquo;). Double-click
+          <code>serve.cmd</code> in this folder &mdash; it starts a server and reopens the tool
+          at <code>http://localhost:8000</code>. Local video files work fine either way.
+        </div>
+
+        <div class="backup-block">
+          <h3>All notes</h3>
+          <div class="backup-row">
+            <button type="button" id="backup-btn">Export all notes</button>
+            <button type="button" id="restore-btn">Import backup</button>
+            <input type="file" id="restore-input" accept="application/json">
+          </div>
+          <p class="backup-hint">One file holding every note, every summary and every session name.
+            Importing only ever adds notes back &mdash; it never overwrites or deletes.</p>
+        </div>
+      </section>
+
+      <section class="home-sessions">
+        <header class="home-sessions-head">
+          <h3>Sessions</h3>
+          <input type="search" id="session-filter" placeholder="Filter sessions" aria-label="Filter sessions">
+          <span class="grow"></span>
+          <button type="button" class="hidden" id="start-close">Back to the video</button>
+        </header>
+        <div class="recent-list" id="recent-list"></div>
+      </section>
+    </div>
+  </main>
+
   <div class="workspace">
     <section class="stage">
+      <div class="stage-video">
       <div class="video-wrap" id="video-wrap">
         <video id="video" playsinline preload="metadata"></video>
         <div id="yt-holder"></div>
@@ -78,44 +124,7 @@
           </div>
         </div>
 
-        <div class="start-screen" id="start-screen">
-          <button type="button" class="start-close hidden" id="start-close" title="Back to the video" aria-label="Close">&#10005;</button>
-          <div class="start-inner">
-            <p>Open a match from a YouTube link, or choose a video file from this device. Your notes stay on this device &mdash; nothing is uploaded.</p>
-
-            <div class="file-note hidden" id="file-note">
-              <strong>YouTube links need a local server.</strong>
-              This page is open straight from a file, and YouTube refuses to embed into a
-              <code>file://</code> page (it answers with &ldquo;error 153&rdquo;). Double-click
-              <code>serve.cmd</code> in this folder &mdash; it starts a server and reopens the tool
-              at <code>http://localhost:8000</code>. Local video files work fine either way.
-            </div>
-
-            <form class="url-field big" id="start-url-form">
-              <input type="text" id="url-input" placeholder="https://www.youtube.com/watch?v=&hellip;" spellcheck="false" aria-label="YouTube link">
-              <button type="submit" class="primary">Open link</button>
-            </form>
-
-            <div class="or">or</div>
-            <button type="button" id="empty-load-btn">Choose a video file</button>
-
-            <div class="recent-block">
-              <h3>Recent</h3>
-              <div class="recent-list" id="recent-list"></div>
-            </div>
-
-            <div class="backup-block">
-              <h3>All notes</h3>
-              <div class="backup-row">
-                <button type="button" id="backup-btn">Back up everything</button>
-                <button type="button" id="restore-btn">Restore backup</button>
-                <input type="file" id="restore-input" accept="application/json">
-              </div>
-              <p class="backup-hint">A backup holds every note for every video in one file.
-                Restoring only ever adds notes back &mdash; it never overwrites or deletes.</p>
-            </div>
-          </div>
-        </div>
+      </div>
       </div>
 
       <div class="timeline">

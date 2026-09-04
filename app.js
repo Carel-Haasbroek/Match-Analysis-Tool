@@ -7,7 +7,8 @@
   var canvas = $('draw-canvas'), ctx = canvas.getContext('2d');
   var frameBuf = document.createElement('canvas'), fctx = frameBuf.getContext('2d');
   var fileInput = $('file-input'), fileNameEl = $('file-name'), statusEl = $('status');
-  var startScreen = $('start-screen'), startClose = $('start-close'), videoWrap = $('video-wrap');
+  var homeView = $('home'), startClose = $('start-close'), videoWrap = $('video-wrap');
+  var workspace = document.querySelector('.workspace');
   var recentList = $('recent-list'), urlInput = $('url-input'), topUrlInput = $('top-url-input');
   var seek = $('seek'), markStrip = $('mark-strip');
   var playBtn = $('play-btn'), backBtn = $('back-btn'), fwdBtn = $('fwd-btn');
@@ -36,6 +37,9 @@
 
   var LIB_KEY = 'vnotes:index', LIB_MAX = 40;
   var IS_FILE = location.protocol === 'file:';
+  /* Present only under Electron; its absence keeps every browser path untouched. */
+  var DESKTOP = (typeof window.desktop === 'object' && window.desktop &&
+                 typeof window.desktop.openVideo === 'function') ? window.desktop : null;
 
   /* How long a note's drawing stays on screen once the playhead reaches it,
      in seconds. User-adjustable; persisted in PREFS_KEY. */
@@ -104,16 +108,26 @@
         }
         return idbOp('readwrite', function(s){ return s.put(value, k); });
       },
-      /* Every stored key, unprefixed — used only to build a full backup. */
+      /* Every stored key, unprefixed — used only to build a full backup.
+         A host store must expose keys() of its own: falling back to memStore would
+         quietly reduce "back up everything" to "back up what I opened today". */
       keys: function(){
-        if (hasWinStorage) return Promise.resolve(Object.keys(memStore));
-        return idbOp('readonly', function(s){ return s.getAllKeys(); })
-          .then(function(list){
-            if (!list) list = Object.keys(memStore);
-            return list.filter(function(k){
-              return typeof k === 'string' && k.indexOf(KEY_PREFIX) === 0;
-            }).map(function(k){ return k.slice(KEY_PREFIX.length); });
+        var source;
+        if (hasWinStorage && typeof window.storage.keys === 'function'){
+          source = Promise.resolve(window.storage.keys()).catch(function(){
+            return Object.keys(memStore);
           });
+        } else if (hasWinStorage){
+          source = Promise.resolve(Object.keys(memStore));
+        } else {
+          source = idbOp('readonly', function(s){ return s.getAllKeys(); });
+        }
+        return source.then(function(list){
+          if (!list) list = Object.keys(memStore);
+          return list.filter(function(k){
+            return typeof k === 'string' && k.indexOf(KEY_PREFIX) === 0;
+          }).map(function(k){ return k.slice(KEY_PREFIX.length); });
+        });
       }
     };
   })();
@@ -220,7 +234,9 @@
   }
 
   /* ---------- source: local file ---------- */
-  function createFileSource(file){
+  /* src is { url, revoke }: a browser passes an object URL that must be revoked,
+     the desktop passes a /media stream URL that must not be. */
+  function createFileSource(src){
     var api = { kind:'file', onReady:null, onTick:null, onPlayState:null, onError:null };
     var myUrl = null;
 
@@ -239,8 +255,8 @@
     ytHolder.style.display = 'none';
     ytHolder.innerHTML = '';
     video.style.display = 'block';
-    myUrl = URL.createObjectURL(file);
-    video.src = myUrl;
+    myUrl = src.revoke ? src.url : null;
+    video.src = src.url;
     video.load();
 
     api.play = function(){ video.play(); };
@@ -531,12 +547,28 @@
   }
 
   function loadFileVideo(file, expectKey){
-    var key = keyFor(file);
+    openFileDescriptor({
+      name: file.name, size: file.size,
+      url: URL.createObjectURL(file), revoke: true
+    }, expectKey);
+  }
+
+  /* The desktop route: a remembered path, streamed. The key is still name + size,
+     so a video reopened this way lands on the notes it already had. */
+  function loadFilePath(info, expectKey){
+    openFileDescriptor({
+      name: info.name, size: info.size, url: info.url, revoke: false, path: info.path
+    }, expectKey);
+  }
+
+  function openFileDescriptor(d, expectKey){
+    var key = keyFor({ name: d.name, size: d.size });
     pendingNotice = (expectKey && expectKey !== key)
       ? 'That is a different file — starting a fresh set of notes.'
       : '';
-    openSource(function(){ return createFileSource(file); }, {
-      kind: 'file', key: key, label: file.name, fileName: file.name, fileSize: file.size
+    openSource(function(){ return createFileSource(d); }, {
+      kind: 'file', key: key, label: d.name,
+      fileName: d.name, fileSize: d.size, filePath: d.path || null
     });
   }
 
@@ -572,8 +604,14 @@
   }
 
   /* ---------- picking a file ---------- */
-  $('load-btn').addEventListener('click', function(){ pendingKey = null; fileInput.click(); });
-  $('empty-load-btn').addEventListener('click', function(){ pendingKey = null; fileInput.click(); });
+  function chooseVideo(expectKey){
+    if (!DESKTOP){ pendingKey = expectKey || null; fileInput.click(); return; }
+    DESKTOP.openVideo().then(function(info){
+      if (info) loadFilePath(info, expectKey || null);
+    });
+  }
+  $('load-btn').addEventListener('click', function(){ chooseVideo(null); });
+  $('empty-load-btn').addEventListener('click', function(){ chooseVideo(null); });
 
   fileInput.addEventListener('change', function(e){
     var f = e.target.files && e.target.files[0];
@@ -600,14 +638,20 @@
   });
 
   /* ---------- start screen + library ---------- */
+  /* Home and the player are alternate views of the whole page, not an overlay. */
   function showStart(){
-    startScreen.classList.remove('hidden');
+    homeView.classList.remove('hidden');
+    workspace.classList.add('hidden');
     startClose.classList.toggle('hidden', !player);
     renderRecent();
   }
-  function hideStart(){ startScreen.classList.add('hidden'); }
+  function hideStart(){
+    homeView.classList.add('hidden');
+    workspace.classList.remove('hidden');
+  }
 
   $('recent-btn').addEventListener('click', showStart);
+  $('session-filter').addEventListener('input', renderRecent);
   startClose.addEventListener('click', function(){ if (player) hideStart(); });
 
   function loadLibrary(){
@@ -630,6 +674,7 @@
     entry.url = source.url || null;
     entry.fileName = source.fileName || null;
     entry.fileSize = source.fileSize || null;
+    if (source.filePath) entry.filePath = source.filePath;
     entry.noteCount = notes.length;
     entry.lastOpened = Date.now();
     library.unshift(entry);
@@ -647,15 +692,54 @@
   function openEntry(entry){
     if (entry.kind === 'youtube' && entry.videoId){
       loadYouTubeVideo(entry.videoId, 0, entry.label);   /* customName applied by refreshName */
-    } else {
-      pendingKey = entry.key;
-      setNotice('Choose "' + (entry.fileName || autoName(entry)) + '" again to reopen its notes.');
-      fileInput.click();
+      return;
     }
+    if (DESKTOP && entry.filePath){
+      DESKTOP.statVideo(entry.filePath).then(function(info){
+        if (info){ loadFilePath(info, entry.key); return; }
+        markUnavailable(entry);
+      });
+      return;
+    }
+    if (DESKTOP){ chooseVideo(entry.key); return; }
+    pendingKey = entry.key;
+    setNotice('Choose "' + (entry.fileName || autoName(entry)) + '" again to reopen its notes.');
+    fileInput.click();
+  }
+
+  /* The video has moved or its drive is not connected. Say which file, and offer to
+     point at it again — the key is name + size, so the notes reattach untouched. */
+  function markUnavailable(entry){
+    entry.missing = true;
+    saveLibrary();
+    renderRecent();
+    setNotice('“' + entryName(entry) + '” — video not found at ' + entry.filePath, 20000);
+  }
+
+  function relocate(entry){
+    if (!DESKTOP) return;
+    DESKTOP.openVideo().then(function(info){
+      if (!info) return;
+      delete entry.missing;
+      entry.filePath = info.path;
+      saveLibrary();
+      loadFilePath(info, entry.key);
+    });
   }
 
   function renderRecent(){
     recentList.innerHTML = '';
+    var q = ($('session-filter').value || '').trim().toLowerCase();
+    var shown = q
+      ? library.filter(function(e){ return entryName(e).toLowerCase().indexOf(q) >= 0; })
+      : library;
+    if (q && !shown.length){
+      var none = document.createElement('div');
+      none.className = 'recent-empty';
+      none.textContent = 'No session matches "' + q + '".';
+      recentList.appendChild(none);
+      return;
+    }
     if (!library.length){
       var empty = document.createElement('div');
       empty.className = 'recent-empty';
@@ -664,7 +748,7 @@
       return;
     }
 
-    library.forEach(function(entry){
+    shown.forEach(function(entry){
       var row = document.createElement('div');
       row.className = 'recent-row';
 
@@ -683,8 +767,15 @@
       if (entry.lastOpened) bits.push(relTime(entry.lastOpened));
       /* once renamed, still say which video it is */
       if (entry.customName && entry.customName.trim()) bits.push(autoName(entry));
-      if (entry.kind === 'file') bits.push('pick the file again');
+      if (entry.kind === 'file' && !(DESKTOP && entry.filePath)) bits.push('pick the file again');
       meta.textContent = bits.join(' · ');
+      if (entry.missing && entry.filePath){
+        row.classList.add('missing');
+        var warn = document.createElement('div');
+        warn.className = 'recent-missing';
+        warn.textContent = 'Video not found at ' + entry.filePath;
+        main.appendChild(warn);
+      }
       main.appendChild(label);
       main.appendChild(meta);
 
@@ -720,6 +811,15 @@
           if (e.key === 'Escape'){ e.preventDefault(); commit(false); }
         });
         input.addEventListener('blur', function(){ commit(true); });
+      }
+
+      if (entry.missing && DESKTOP){
+        var loc = document.createElement('button');
+        loc.type = 'button';
+        loc.className = 'recent-locate';
+        loc.textContent = 'Locate video';
+        loc.addEventListener('click', function(e){ e.stopPropagation(); relocate(entry); });
+        row.appendChild(loc);
       }
 
       var rename = document.createElement('button');
@@ -1464,6 +1564,13 @@
     }
   }
 
+  /* A resize changes the list's height, which can leave the highlighted row out of
+     view. Only re-anchor on resize — doing it every tick would fight manual scrolling. */
+  window.addEventListener('resize', function(){
+    var el = notesList.querySelector('.note-item.current');
+    if (el) scrollIntoList(el);
+  });
+
   /* ---------- summary modal ---------- */
   function openSummaryModal(){
     $('summary-modal-sub').textContent = displayName();
@@ -2005,6 +2112,7 @@
 
   if (IS_FILE) $('file-note').classList.remove('hidden');
 
+  showStart();   /* home and the player are exclusive views; start on home */
   renderNotes();
   loadPrefs();
   loadLibrary();

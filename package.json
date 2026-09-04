@@ -1,0 +1,14 @@
+{
+  "name": "video-notes",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Match analysis tool - timestamped drawings and notes over local video and YouTube",
+  "main": "electron/main.js",
+  "scripts": {
+    "start": "electron .",
+    "test": "node electron/selftest.js"
+  },
+  "devDependencies": {
+    "electron": "^33.0.0"
+  }
+}
