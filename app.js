@@ -32,13 +32,25 @@
   var hasFrame = false, reviewNote = null, overlayKey = null;
   var overlayTimer = null, overlayEndsAt = 0, overlayRemaining = 0, lastSyncTime = 0;
   var autoPause = false, playTarget = null, panelNoteId = null, notePanelOpen = true;
-  var volume = 1, muted = false;
+  var volume = 1, muted = false, theme = '';
   var rotation = 0, rate = 1;
   var RATES = [1, 0.5, 0.25];
   var hudIdleTimer = null;
   var activePane = 'notes';
 
   var LIB_KEY = 'vnotes:index', LIB_MAX = 40;
+
+  /* name, label, and the three colours the swatch shows */
+  var THEMES = [
+    { id:'',          name:'Neo retro',  swatch:['#120d1f','#ff4d9d','#3ce8e0'] },
+    { id:'dos',       name:'MS-DOS',     swatch:['#000000','#33ff33','#1f7a1f'] },
+    { id:'win95',     name:'Windows 95', swatch:['#008080','#c0c0c0','#000080'] },
+    { id:'amber',     name:'Amber CRT',  swatch:['#0d0700','#ffb000','#7a4a11'] },
+    { id:'gameboy',   name:'Game Boy',   swatch:['#9bbc0f','#306230','#0f380f'] },
+    { id:'blueprint', name:'Blueprint',  swatch:['#0d2b58','#ffffff','#9fd3ff'] },
+    { id:'paper',     name:'Paper',      swatch:['#f4f1ea','#b5341f','#2f6f5e'] },
+    { id:'vapor',     name:'Vaporwave',  swatch:['#2b1055','#ff8ad8','#7ef0e0'] }
+  ];
   var IS_FILE = location.protocol === 'file:';
   /* Present only under Electron; its absence keeps every browser path untouched. */
   var DESKTOP = (typeof window.desktop === 'object' && window.desktop &&
@@ -1254,7 +1266,8 @@
       autoPause: autoPause,
       notePanelOpen: notePanelOpen,
       volume: volume,
-      muted: muted
+      muted: muted,
+      theme: theme
     });
   }
 
@@ -1283,6 +1296,7 @@
       volume = (typeof p.volume === 'number') ? Math.min(1, Math.max(0, p.volume)) : 1;
       muted = !!p.muted;
       applySound();
+      applyTheme(typeof p.theme === 'string' ? p.theme : '', false);
     });
   }
 
@@ -1879,6 +1893,44 @@
     });
   }
 
+  /* ---------- themes ---------- */
+  /* Every theme is a token set on the root element, so nothing else has to know
+     which one is on. The pen palette is not themed: those colours are content. */
+  function applyTheme(id, save){
+    theme = id || '';
+    if (theme) document.documentElement.setAttribute('data-theme', theme);
+    else document.documentElement.removeAttribute('data-theme');
+    var chips = $('theme-row').children;
+    for (var i = 0; i < chips.length; i++){
+      chips[i].classList.toggle('selected', chips[i].dataset.theme === theme);
+    }
+    if (save) savePrefs();
+  }
+
+  function renderThemes(){
+    var row = $('theme-row');
+    row.innerHTML = '';
+    THEMES.forEach(function(t){
+      var chip = document.createElement('button');
+      chip.type = 'button';
+      chip.className = 'theme-chip' + (t.id === theme ? ' selected' : '');
+      chip.dataset.theme = t.id;
+      chip.title = t.name;
+
+      var sw = document.createElement('span');
+      sw.className = 'theme-swatch';
+      t.swatch.forEach(function(c){
+        var i = document.createElement('i');
+        i.style.background = c;
+        sw.appendChild(i);
+      });
+      chip.appendChild(sw);
+      chip.appendChild(document.createTextNode(t.name));
+      chip.addEventListener('click', function(){ applyTheme(t.id, true); });
+      row.appendChild(chip);
+    });
+  }
+
   /* ---------- sound ---------- */
   /* Both sources speak 0..1 through the facade; YouTube's 0..100 is its own problem. */
   function applySound(){
@@ -2368,6 +2420,7 @@
     });
   }
 
+  renderThemes();
   showStart();   /* home and the player are exclusive views; start on home */
   renderNotes();
   loadPrefs();
