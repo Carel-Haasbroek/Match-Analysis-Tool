@@ -6,7 +6,7 @@
   "main": "electron/main.js",
   "scripts": {
     "start": "electron .",
-    "test": "node electron/selftest.js",
+    "test": "node electron/selftest.js && node electron/storetest.js",
     "dist": "electron-builder",
     "icon": "node build/make-icon.js"
   },
@@ -25,6 +25,8 @@
       "electron/preload.js",
       "electron/server.js",
       "electron/store.js",
+      "electron/datadir.js",
+      "electron/folderstore.js",
       "app.html",
       "styles.css",
       "app.js",

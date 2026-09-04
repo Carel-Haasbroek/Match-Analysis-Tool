@@ -1,16 +1,20 @@
 'use strict';
 
-const { app, BrowserWindow, ipcMain, dialog } = require('electron');
+const { app, BrowserWindow, ipcMain, dialog, shell } = require('electron');
 const path = require('path');
 const fs = require('fs');
 
 const { Store } = require('./store');
+const { FolderStore } = require('./folderstore');
+const { resolveDataDir, migrateIfNeeded } = require('./datadir');
 const { createServer } = require('./server');
 
 const ROOT = path.join(__dirname, '..');
 
 let win = null;
 let store = null;
+let dataDir = null;          /* { dir, kind, fellBack } */
+let migration = null;        /* what happened on first run, reported to the window */
 let http = null;
 let port = 0;
 
@@ -43,6 +47,18 @@ function createWindow(){
 ipcMain.handle('store:get', (e, key) => store.get(key));
 ipcMain.handle('store:set', (e, key, value) => store.set(key, value));
 ipcMain.handle('store:keys', () => store.keys());
+
+/* where the notes actually are, and what the first run did with them */
+ipcMain.handle('app:dataDir', () => ({
+  dir: dataDir.dir, kind: dataDir.kind, fellBack: dataDir.fellBack, migration: migration
+}));
+ipcMain.handle('app:reveal', (e, target) => {
+  shell.openPath(target || dataDir.dir);
+  return true;
+});
+
+/* grouping: the app's folders are the folders on disk */
+ipcMain.handle('session:move', (e, key, groupPath) => store.moveSession(key, groupPath));
 
 /* ---------- videos ---------- */
 ipcMain.handle('video:open', async () => {
@@ -79,7 +95,24 @@ function describe(filePath){
 }
 
 app.whenReady().then(async () => {
-  store = new Store(path.join(app.getPath('userData'), 'store'));
+  dataDir = resolveDataDir(app, ROOT);
+  store = new FolderStore(dataDir.dir);
+
+  /* One-time move out of the old base64-blob store. It writes a backup first and
+     never deletes the old copy: this is work that cannot be recreated. */
+  try {
+    migration = migrateIfNeeded(path.join(app.getPath('userData'), 'store'), store,
+      (m) => console.log('[migrate] ' + m));
+    if (migration && migration.migrated){
+      console.log('[migrate] moved ' + migration.migrated + ' keys, ' +
+        migration.notesBefore + ' notes -> ' + migration.notesAfter +
+        (migration.intact ? ' (intact)' : ' (MISMATCH)'));
+    }
+  } catch (err) {
+    migration = { error: String(err && err.message || err) };
+    console.error('[migrate] failed: ' + migration.error);
+  }
+  console.log('[notes] ' + dataDir.dir + '  (' + dataDir.kind + ')');
   http = createServer({ root: ROOT });
   port = await http.listen();
   createWindow();

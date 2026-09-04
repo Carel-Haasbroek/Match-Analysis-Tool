@@ -17,5 +17,8 @@ contextBridge.exposeInMainWorld('storage', {
 /* Everything the browser cannot do. Its presence is how app.js detects desktop. */
 contextBridge.exposeInMainWorld('desktop', {
   openVideo: () => ipcRenderer.invoke('video:open'),
-  statVideo: (filePath) => ipcRenderer.invoke('video:stat', filePath)
+  statVideo: (filePath) => ipcRenderer.invoke('video:stat', filePath),
+  dataDir: () => ipcRenderer.invoke('app:dataDir'),
+  reveal: (target) => ipcRenderer.invoke('app:reveal', target),
+  moveSession: (key, groupPath) => ipcRenderer.invoke('session:move', key, groupPath)
 });
