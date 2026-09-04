@@ -45,8 +45,9 @@
           <strong>YouTube links need a local server.</strong>
           This page is open straight from a file, and YouTube refuses to embed into a
           <code>file://</code> page (it answers with &ldquo;error 153&rdquo;). Double-click
-          <code>serve.cmd</code> in this folder &mdash; it starts a server and reopens the tool
-          at <code>http://localhost:8000</code>. Local video files work fine either way.
+          <code>serve.cmd</code> in this folder to open the desktop app instead, which has no
+          such restriction. To stay in a browser, serve this folder over <code>http://</code>
+          with any static server. Local video files work fine either way.
         </div>
 
         <div class="backup-block">
@@ -198,10 +199,6 @@
       </header>
 
       <div class="pane" id="pane-notes">
-        <div class="flat-banner hidden" id="flat-banner">
-          <span id="flat-banner-text"></span>
-          <button type="button" id="recover-btn">Recover drawings</button>
-        </div>
         <div class="notes-list" id="notes-list"></div>
       </div>
 
@@ -230,28 +227,6 @@
       <button type="button" id="lightbox-download">Download image</button>
       <button type="button" id="lightbox-jump" class="primary">Jump to this moment</button>
       <button type="button" id="lightbox-close">Close</button>
-    </div>
-  </div>
-</div>
-
-<div class="lightbox" id="recover">
-  <div class="lightbox-panel">
-    <h2 class="recover-title">Recover this drawing</h2>
-    <div class="note-time mono" id="recover-time"></div>
-    <div class="recover-grid">
-      <figure>
-        <figcaption>Saved picture</figcaption>
-        <img id="recover-before" alt="The note as it was saved">
-      </figure>
-      <figure>
-        <figcaption>Recovered drawing</figcaption>
-        <img id="recover-after" class="checker" alt="The drawing lifted off the frame">
-      </figure>
-    </div>
-    <p class="recover-hint" id="recover-hint"></p>
-    <div class="lightbox-actions">
-      <button type="button" id="recover-skip">Skip this one</button>
-      <button type="button" id="recover-accept" class="primary">Use this drawing</button>
     </div>
   </div>
 </div>

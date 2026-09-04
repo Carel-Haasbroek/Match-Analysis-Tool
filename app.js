@@ -485,7 +485,7 @@
 
     [playBtn, backBtn, fwdBtn, nextNoteBtn, markBtn, seek, muteBtn, volumeRange]
       .forEach(function(el){ el.disabled = false; });
-    videoWrap.style.aspectRatio = '16 / 9';
+    videoWrap.style.setProperty('--ar', 16/9);
     seek.value = 0;
     seek.max = 100;
     playerHud.classList.remove('playing');
@@ -497,7 +497,7 @@
 
     p.onReady = function(){
       var a = p.getAspect();
-      if (a && a.w && a.h) videoWrap.style.aspectRatio = a.w + ' / ' + a.h;
+      if (a && a.w && a.h) videoWrap.style.setProperty('--ar', a.w / a.h);
       var d = p.getDuration();
       if (d) seek.max = d;
       var t = p.getTitle();
@@ -1152,8 +1152,8 @@
       ctx.restore();
       return;
     }
-    /* An old note whose drawing has been recovered: a transparent PNG, so it sits
-       in place over the live video exactly like a vector note. */
+    /* Some older notes carry a transparent PNG of just the drawing, recovered back
+       when that tool existed. Those sit in place exactly like a vector note. */
     if (n.overlayImage){
       var rec = imgFor(n, n.overlayImage);
       if (rec.complete && rec.naturalWidth){
@@ -1161,8 +1161,8 @@
       }
       return;
     }
-    /* Not recovered (or recovery declined): show the saved still as a corner inset
-       so the live video underneath stays completely unobscured. */
+    /* Only a flattened still: show it as a corner inset so the live video
+       underneath stays completely unobscured. */
     var img = imgFor(n, n.image);
     if (!img.complete || !img.naturalWidth) return;
     var iw = Math.round(canvas.width * 0.28);
@@ -1254,7 +1254,6 @@
   function renderNotes(){
     notesList.innerHTML = '';
     notesHeading.textContent = notes.length ? 'Notes (' + notes.length + ')' : 'Notes';
-    updateFlatBanner();
     if (activePane === 'summary') renderSummaryNotes();
     if (!notes.length){
       var empty = document.createElement('div');
@@ -1730,203 +1729,6 @@
       row.addEventListener('click', function(){ jumpTo(note.time, note); });
       host.appendChild(row);
     });
-  }
-
-  /* ---------- recovering drawings from old flattened notes ---------- */
-  /* Notes saved before drawings were stored separately hold one flattened JPEG of
-     frame+drawing. Subtracting the real frame at that timestamp leaves the drawing.
-     A pixel is kept only if it BOTH differs from the live frame AND looks like one
-     of the pen colours, which is what keeps kit colours out of the result. */
-
-  var PEN_COLORS = [
-    [224,71,63], [224,166,58], [79,180,119], [74,144,217], [244,241,234],  /* original palette */
-    [255,45,120], [255,176,32], [61,255,158], [53,201,255], [255,255,255]  /* neo-retro palette */
-  ];
-  var DIFF_MIN = 45;    /* how far a pixel must sit from the live frame */
-  var PEN_TOL2 = 110 * 110;
-
-  function nearPen(r, g, b){
-    for (var i = 0; i < PEN_COLORS.length; i++){
-      var p = PEN_COLORS[i];
-      var dr = r - p[0], dg = g - p[1], db = b - p[2];
-      if (dr*dr + dg*dg + db*db < PEN_TOL2) return true;
-    }
-    return false;
-  }
-
-  function flatNotes(){
-    return notes.filter(function(n){
-      return !hasShapes(n) && !n.overlayImage && !n.noRecover && n.image;
-    });
-  }
-
-  function seekAndSettle(t){
-    return new Promise(function(resolve){
-      var done = false;
-      /* Deliberately no requestAnimationFrame here: it stops firing in a hidden tab,
-         which would hang the recovery with no error. 'seeked' means the frame is
-         decoded and drawable; a short timer is enough to let it land. */
-      function fire(){
-        if (done) return;
-        done = true;
-        video.removeEventListener('seeked', fire);
-        setTimeout(resolve, 60);
-      }
-      video.addEventListener('seeked', fire);
-      if (Math.abs(video.currentTime - t) < 0.05){ fire(); return; }  /* already there */
-      video.currentTime = t;
-      setTimeout(fire, 2000);   /* never hang on a video that will not seek */
-    });
-  }
-
-  function loadImage(src){
-    return new Promise(function(resolve, reject){
-      var i = new Image();
-      i.onload = function(){ resolve(i); };
-      i.onerror = reject;
-      i.src = src;
-    });
-  }
-
-  /* Returns { dataUrl, kept } or null when nothing convincing was found. */
-  function extractDrawing(savedImg, w, h){
-    var a = document.createElement('canvas'); a.width = w; a.height = h;
-    var actx = a.getContext('2d');
-    actx.drawImage(savedImg, 0, 0, w, h);
-    var saved = actx.getImageData(0, 0, w, h);
-
-    var b = document.createElement('canvas'); b.width = w; b.height = h;
-    b.getContext('2d').drawImage(video, 0, 0, w, h);
-    var frame = b.getContext('2d').getImageData(0, 0, w, h);
-
-    var n = w * h, mask = new Uint8Array(n), sd = saved.data, fd = frame.data, i, p;
-
-    for (i = 0; i < n; i++){
-      p = i * 4;
-      var dr = Math.abs(sd[p] - fd[p]),
-          dg = Math.abs(sd[p+1] - fd[p+1]),
-          db = Math.abs(sd[p+2] - fd[p+2]);
-      if (Math.max(dr, dg, db) > DIFF_MIN && nearPen(sd[p], sd[p+1], sd[p+2])) mask[i] = 1;
-    }
-
-    /* Drop lone pixels (JPEG speckle), then grow by one to put back the soft
-       stroke edges that blended into the frame and so failed the colour test. */
-    var clean = new Uint8Array(n);
-    for (var y = 1; y < h-1; y++) for (var x = 1; x < w-1; x++){
-      i = y*w + x;
-      if (!mask[i]) continue;
-      var c = mask[i-1] + mask[i+1] + mask[i-w] + mask[i+w] +
-              mask[i-w-1] + mask[i-w+1] + mask[i+w-1] + mask[i+w+1];
-      if (c >= 2) clean[i] = 1;
-    }
-    var grown = new Uint8Array(clean);
-    for (y = 1; y < h-1; y++) for (x = 1; x < w-1; x++){
-      i = y*w + x;
-      if (clean[i]){ grown[i-1]=1; grown[i+1]=1; grown[i-w]=1; grown[i+w]=1; }
-    }
-
-    var out = actx.createImageData(w, h), od = out.data, kept = 0;
-    for (i = 0; i < n; i++){
-      if (!grown[i]) continue;
-      p = i * 4;
-      od[p] = sd[p]; od[p+1] = sd[p+1]; od[p+2] = sd[p+2]; od[p+3] = 255;
-      kept++;
-    }
-    if (kept < 30) return null;   /* nothing meaningful survived */
-
-    var o = document.createElement('canvas'); o.width = w; o.height = h;
-    o.getContext('2d').putImageData(out, 0, 0);
-    return { dataUrl: o.toDataURL('image/png'), kept: kept, total: n };
-  }
-
-  var recoverQueue = [], recoverCurrent = null, recoverResult = null, recoverStats = null;
-
-  function updateFlatBanner(){
-    var banner = $('flat-banner');
-    var list = flatNotes();
-    var can = player && player.canCaptureFrame && player.canCaptureFrame();
-    if (!list.length || !can){ banner.classList.add('hidden'); return; }
-    $('flat-banner-text').textContent = list.length +
-      (list.length === 1 ? ' note was' : ' notes were') +
-      ' saved before drawings were stored separately.';
-    banner.classList.remove('hidden');
-  }
-
-  $('recover-btn').addEventListener('click', function(){
-    recoverQueue = flatNotes().slice();
-    recoverStats = { done: 0, skipped: 0, failed: 0 };
-    player.pause();
-    nextRecovery();
-  });
-
-  function nextRecovery(){
-    if (!recoverQueue.length){ finishRecovery(); return; }
-    recoverCurrent = recoverQueue.shift();
-    var note = recoverCurrent;
-
-    loadImage(note.image).then(function(img){
-      var w = img.naturalWidth, h = img.naturalHeight;
-      return seekAndSettle(note.time).then(function(){
-        return extractDrawing(img, w, h);
-      }).then(function(res){
-        if (!res){
-          recoverStats.failed++;
-          note.noRecover = true;
-          persist();
-          nextRecovery();
-          return;
-        }
-        recoverResult = res.dataUrl;
-        $('recover-time').textContent = fmt(note.time) + (note.text ? ' — ' + note.text : '');
-        $('recover-before').src = note.image;
-        $('recover-after').src = res.dataUrl;
-        $('recover-hint').textContent =
-          'Recovered ' + Math.round((res.kept / res.total) * 1000) / 10 + '% of the frame as drawing. ' +
-          'If that looks like what you drew, keep it — the original picture is kept either way.';
-        $('recover').classList.add('open');
-      });
-    }).catch(function(){
-      recoverStats.failed++;
-      nextRecovery();
-    });
-  }
-
-  $('recover-accept').addEventListener('click', function(){
-    if (recoverCurrent && recoverResult){
-      recoverCurrent.overlayImage = recoverResult;   /* additive: `image` is untouched */
-      delete imgCache[recoverCurrent.id + ':i'];
-      recoverStats.done++;
-      persist();
-      overlayKey = null;
-    }
-    $('recover').classList.remove('open');
-    recoverCurrent = null; recoverResult = null;
-    nextRecovery();
-  });
-
-  $('recover-skip').addEventListener('click', function(){
-    if (recoverCurrent){
-      recoverCurrent.noRecover = true;   /* keeps it from asking again */
-      recoverStats.skipped++;
-      persist();
-    }
-    $('recover').classList.remove('open');
-    recoverCurrent = null; recoverResult = null;
-    nextRecovery();
-  });
-
-  function finishRecovery(){
-    $('recover').classList.remove('open');
-    var s = recoverStats || { done:0, skipped:0, failed:0 };
-    var bits = [];
-    if (s.done) bits.push(s.done + ' recovered');
-    if (s.skipped) bits.push(s.skipped + ' skipped');
-    if (s.failed) bits.push(s.failed + ' could not be read');
-    setNotice(bits.length ? bits.join(', ') + '.' : 'Nothing to recover.', 12000);
-    overlayKey = null;
-    renderNotes();
-    updateFlatBanner();
-    syncOverlay(player ? player.getTime() : 0, true);
   }
 
   /* ---------- whole-library backup / restore ---------- */

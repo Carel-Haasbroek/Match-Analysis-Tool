@@ -72,9 +72,20 @@ input[type=file]{ display:none; }
 .stage{ flex:1; display:flex; flex-direction:column; padding:20px; gap:14px;
   min-width:0; min-height:0; }
 /* the video takes what is left after the timeline and controls, and letterboxes */
-.stage-video{ flex:1; min-height:180px; display:flex; align-items:center; justify-content:center; }
+/* A size container, so the box below can fit itself against BOTH axes. */
+.stage-video{ flex:1; min-height:180px; container-type:size;
+  display:flex; align-items:center; justify-content:center; }
 
-.video-wrap{ position:relative; width:100%; max-height:100%; aspect-ratio:16/9; background:#000;
+/* Contain-fit, done properly: width is the smaller of the container's width and the
+   width the container's height allows at this ratio, so the box shrinks against
+   whichever axis binds and never distorts. A single-axis rule cannot do this — pinning
+   width and clamping height (or the reverse) breaks the ratio the moment the other axis
+   binds, which is what the draw toolbar exposed. It matters because the drawing canvas
+   is inset:0 on this box: a distorted box misplaces drawings, it does not just look odd.
+   --ar is set from the real video dimensions in app.js. */
+.video-wrap{ position:relative;
+  width:min(100cqw, calc(100cqh * var(--ar, 1.7778)));
+  aspect-ratio:var(--ar, 1.7778); background:#000;
   border-radius:var(--radius); overflow:hidden; border:1px solid var(--border);
   box-shadow:0 0 0 1px rgba(255,77,157,.12), 0 10px 34px rgba(0,0,0,.5); }
 .video-wrap video{ position:absolute; inset:0; width:100%; height:100%; object-fit:contain; background:#000; }
@@ -124,18 +135,23 @@ input[type=file]{ display:none; }
 #volume:disabled{ opacity:.4; cursor:not-allowed; }
 
 /* ---------- the note shown over the video ---------- */
-.note-view{ position:absolute; left:0; right:0; bottom:0; height:20%; min-height:56px; z-index:4;
+.note-view{ position:absolute; left:0; right:0; bottom:0; height:20%; min-height:68px; z-index:4;
   display:flex; flex-direction:column; justify-content:center;
   padding:10px 16px; gap:3px;
   background:linear-gradient(180deg, rgba(12,8,22,.55), rgba(12,8,22,.86));
   border-top:1px solid rgba(255,77,157,.5);
   backdrop-filter:blur(3px); -webkit-backdrop-filter:blur(3px);
+  text-align:center;
   transition:transform .22s ease, opacity .22s ease; }
 .note-view.hidden{ display:none; }
 .note-view.collapsed{ transform:translateY(100%); opacity:0; pointer-events:none; }
-.note-view-time{ color:var(--accent); font-size:.78rem; font-weight:700; letter-spacing:.04em; }
-.note-view-text{ color:var(--text); font-size:.92rem; line-height:1.45;
-  overflow-y:auto; text-shadow:0 1px 4px rgba(0,0,0,.85); }
+/* A tight dark halo plus a wider soft drop: the halo is what keeps text legible over a
+   bright mat or a white kit, where a single soft shadow disappears. */
+.note-view-time{ color:var(--accent); font-size:.82rem; font-weight:700; letter-spacing:.04em;
+  text-shadow:0 0 3px rgba(0,0,0,.95), 0 1px 6px rgba(0,0,0,.85); }
+.note-view-text{ color:var(--text); font-size:1.05rem; line-height:1.5;
+  overflow-y:auto;
+  text-shadow:0 0 3px rgba(0,0,0,.95), 0 1px 3px rgba(0,0,0,.9), 0 2px 10px rgba(0,0,0,.75); }
 .note-view-text.muted{ color:var(--text-dim); font-style:italic; }
 
 /* the chevron rides on the panel's top edge and stays put when it collapses */
@@ -330,68 +346,6 @@ input[type=file]{ display:none; }
 .note-del{ background:transparent; border:none; color:var(--text-dim); padding:3px 6px; }
 .note-del:hover{ color:var(--danger); box-shadow:none; }
 
-/* ---------- recovering old flattened notes ---------- */
-.flat-banner{ display:flex; align-items:center; gap:10px; flex-wrap:wrap; margin:10px 14px 0;
-  padding:10px 12px; border-radius:var(--radius); font-size:.8rem; line-height:1.5;
-  color:var(--text-dim); background:var(--accent-2-dim);
-  border:1px solid rgba(60,232,224,.38); }
-.flat-banner.hidden{ display:none; }
-.flat-banner button{ font-size:.78rem; padding:6px 10px; margin-left:auto; }
-
-.recover-title{ font-size:.82rem; font-weight:700; margin:0 0 6px; color:var(--accent-2);
-  text-transform:uppercase; letter-spacing:.14em; }
-.recover-grid{ display:grid; grid-template-columns:1fr 1fr; gap:12px; margin-top:12px; }
-.recover-grid figure{ margin:0; }
-.recover-grid figcaption{ color:var(--text-dim); font-size:.74rem; margin-bottom:5px;
-  text-transform:uppercase; letter-spacing:.1em; }
-.recover-grid img{ width:100%; border-radius:6px; display:block; border:1px solid var(--border);
-  background:#000; }
-/* a chequerboard makes the transparent areas of the recovered drawing obvious */
-.recover-grid img.checker{
-  background-color:#1b1430;
-  background-image:linear-gradient(45deg, #241a44 25%, transparent 25%, transparent 75%, #241a44 75%),
-                   linear-gradient(45deg, #241a44 25%, transparent 25%, transparent 75%, #241a44 75%);
-  background-size:16px 16px; background-position:0 0, 8px 8px; }
-.recover-hint{ color:var(--text-dim); font-size:.8rem; line-height:1.55; margin:12px 0 0; }
-@media (max-width:600px){ .recover-grid{ grid-template-columns:1fr; } }
-
-/* ---------- summary modal ---------- */
-.summary-modal-panel{ background:var(--panel); border:1px solid var(--border);
-  border-radius:var(--radius); width:100%; max-width:1000px; height:min(80vh, 700px);
-  display:flex; flex-direction:column; overflow:hidden;
-  box-shadow:0 0 0 1px rgba(255,77,157,.18), 0 24px 70px rgba(0,0,0,.75); }
-.summary-modal-head{ display:flex; align-items:baseline; gap:10px; padding:14px 16px;
-  border-bottom:1px solid var(--border); flex-shrink:0; }
-.summary-modal-head h2{ margin:0; font-size:.82rem; font-weight:700; color:var(--accent-2);
-  text-transform:uppercase; letter-spacing:.16em; }
-.summary-modal-sub{ color:var(--text-dim); font-size:.82rem; overflow:hidden;
-  text-overflow:ellipsis; white-space:nowrap; max-width:420px; }
-.summary-modal-body{ flex:1; min-height:0; display:grid; grid-template-columns:minmax(0,1fr) minmax(0,1.1fr); }
-.summary-modal-body > section{ display:flex; flex-direction:column; min-height:0; padding:14px 16px; }
-.summary-modal-notes{ border-right:1px solid var(--border); }
-.summary-modal-body h3{ font-size:.72rem; font-weight:700; margin:0 0 10px; color:var(--accent-2);
-  text-transform:uppercase; letter-spacing:.16em; flex-shrink:0; }
-.summary-modal-list{ flex:1; min-height:0; overflow-y:auto; display:flex; flex-direction:column; gap:2px; }
-.summary-modal-write textarea{ flex:1; min-height:0; resize:none; width:100%;
-  background:#150f28; border:1px solid var(--border); border-radius:6px; color:var(--text);
-  font-family:inherit; font-size:.9rem; line-height:1.6; padding:12px 14px; }
-.summary-modal-write textarea::placeholder{ color:var(--text-dim); opacity:.75; }
-.summary-modal-row{ display:flex; gap:10px; padding:8px 9px; border-radius:6px; cursor:pointer;
-  align-items:flex-start; border:1px solid transparent; }
-.summary-modal-row:hover{ background:var(--panel-2); border-color:var(--border); }
-.summary-modal-row.current{ background:var(--accent-dim); border-color:var(--accent); }
-.summary-modal-row img{ width:56px; height:34px; object-fit:cover; border-radius:4px;
-  flex-shrink:0; border:1px solid var(--border); background:#000; }
-.summary-modal-row .m{ min-width:0; }
-.summary-modal-row .mt{ color:var(--accent); font-size:.78rem; font-weight:700;
-  font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace; }
-.summary-modal-row .mx{ color:var(--text); font-size:.82rem; line-height:1.45; margin-top:2px; }
-.summary-modal-row .mx.muted{ color:var(--text-dim); font-style:italic; }
-@media (max-width:760px){
-  .summary-modal-body{ grid-template-columns:1fr; grid-template-rows:1fr 1fr; }
-  .summary-modal-notes{ border-right:none; border-bottom:1px solid var(--border); }
-}
-
 .lightbox{ position:fixed; inset:0; background:rgba(9,5,20,.9); display:none;
   align-items:center; justify-content:center; padding:24px; z-index:50; }
 .lightbox.open{ display:flex; }
@@ -406,6 +360,10 @@ input[type=file]{ display:none; }
   .workspace{ flex-direction:column; overflow-y:auto; }
   .stage{ flex:none; }
   .stage-video{ min-height:0; }
+  /* Stacked: .stage-video is content-sized here, so size containment would collapse
+     it to nothing. Turn it off and drive the box from width. */
+  .stage-video{ container-type:normal; }
+  .video-wrap{ width:100%; height:auto; }
   .notes-panel{ flex:none; }
   .notes-panel{ width:auto; border-left:none; border-top:1px solid var(--border); max-height:45vh; }
   .url-field input{ width:160px; }

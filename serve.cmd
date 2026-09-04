@@ -1,41 +1,63 @@
 @echo off
-rem Serves this folder over http:// so YouTube links work.
-rem YouTube refuses to embed into a file:// page, so opening video-notes.html
-rem by double-clicking it gives "error 153". Run this instead.
+rem Launches the Video Notes desktop app.
+rem
+rem The app runs under Electron, which serves itself over http://127.0.0.1 internally.
+rem That is what lets YouTube embed (it refuses a file:// page) and what lets local
+rem videos stream with seeking.
 
 cd /d "%~dp0"
-set "PORT=8000"
-set "PY="
 
-where python >nul 2>nul && set "PY=python"
-if not defined PY where py >nul 2>nul && set "PY=py"
-if not defined PY goto nopython
+where node >nul 2>nul
+if errorlevel 1 goto nonode
+where npm >nul 2>nul
+if errorlevel 1 goto nonode
+
+rem First run after a fresh copy: no dependencies yet. Installing here beats the
+rem "electron not found" error you would otherwise get.
+if not exist "node_modules\electron" (
+  echo.
+  echo   First run - installing dependencies. This takes a minute or two.
+  echo.
+  call npm install
+  if errorlevel 1 goto installfailed
+  echo.
+)
 
 echo.
-echo   Video Notes  -  http://localhost:%PORT%/video-notes.html
-echo   Serving: %cd%
-echo.
-echo   Leave this window open while you work.
-echo   Press Ctrl+C (or close the window) to stop the server.
+echo   Starting Video Notes...
+echo   Close the app window to quit. This window can be closed once it opens.
 echo.
 
-rem Open the browser a moment later, once the server is actually listening.
-start "" /b powershell -NoProfile -Command "Start-Sleep -Seconds 2; Start-Process 'http://localhost:%PORT%/video-notes.html'"
-
-%PY% -m http.server %PORT% --bind 127.0.0.1
+call npm start
+if errorlevel 1 goto runfailed
 goto done
 
-:nopython
+:nonode
 echo.
-echo   Python was not found on your PATH, so this launcher cannot start a server.
+echo   Node.js was not found on your PATH, so the desktop app cannot start.
 echo.
-echo   Either install Python from https://www.python.org/downloads/
-echo   (tick "Add python.exe to PATH" during setup), or serve this folder with
-echo   any other static server, for example:
+echo   Install it from https://nodejs.org/ (the LTS build is fine), then run this again.
 echo.
-echo       npx http-server -p %PORT%
+echo   To use the browser version instead, serve this folder over http:// with any
+echo   static server, for example:
 echo.
-echo   Then open http://localhost:%PORT%/video-notes.html
+echo       python -m http.server 8000
+echo.
+echo   ...then open http://localhost:8000/video-notes.html
+echo.
+pause
+goto done
+
+:installfailed
+echo.
+echo   npm install failed. Check the messages above - usually a network or proxy issue.
+echo.
+pause
+goto done
+
+:runfailed
+echo.
+echo   The app exited with an error. The messages above should say why.
 echo.
 pause
 
