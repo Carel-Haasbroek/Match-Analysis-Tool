@@ -114,7 +114,14 @@ class FolderStore {
     const cur = this.paths[key];
     if (!cur) return false;
     const name = path.basename(cur);
-    const relGroup = (groupPath || '').split('/').map(safeSegment).filter(Boolean).join(path.sep);
+    /* Drop empty segments BEFORE sanitising: safeSegment turns '' into 'session',
+       so sanitising first would give an empty group path a folder of that name. */
+    const relGroup = (groupPath || '')
+      .split('/')
+      .map(function(x){ return x.trim(); })
+      .filter(Boolean)
+      .map(safeSegment)
+      .join(path.sep);
     let rel = relGroup ? path.join(relGroup, name) : name;
     if (rel === cur) return true;
 

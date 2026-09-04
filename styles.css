@@ -449,3 +449,19 @@ input[type=file]{ display:none; }
 /* the in/out marks, distinguished from note marks by colour and full height */
 .mark.clip-edge{ background:var(--accent-2); height:12px; width:2px;
   box-shadow:0 0 8px rgba(60,232,224,.9); }
+
+/* ---------- session folders ---------- */
+.recent-group{ display:flex; align-items:center; gap:8px; margin:12px 2px 4px;
+  font-size:.72rem; font-weight:700; letter-spacing:.14em; text-transform:uppercase;
+  color:var(--accent-2); }
+.recent-group:first-child{ margin-top:2px; }
+.recent-group.loose{ color:var(--text-dim); }
+.recent-group-count{ font-weight:600; letter-spacing:0; color:var(--text-dim);
+  background:var(--panel-2); border-radius:10px; padding:1px 7px; font-size:.7rem; }
+.recent-folder{ flex-shrink:0; font-family:inherit; font-size:.74rem; max-width:130px;
+  padding:4px 6px; border-radius:5px; color:var(--text-dim);
+  background:var(--panel); border:1px solid var(--border); cursor:pointer; }
+.recent-row:hover .recent-folder{ color:var(--text); border-color:var(--border-lit); }
+.notes-folder{ font-size:.72rem; color:var(--text-dim); cursor:pointer;
+  overflow:hidden; text-overflow:ellipsis; white-space:nowrap; max-width:320px; }
+.notes-folder:hover{ color:var(--accent-2); }

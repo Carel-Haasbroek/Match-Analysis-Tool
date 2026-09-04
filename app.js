@@ -850,11 +850,22 @@
     });
   }
 
+  function folderOf(entry){ return (entry && entry.folder) ? String(entry.folder) : ''; }
+
+  function allFolders(){
+    var set = {};
+    library.forEach(function(e){ if (folderOf(e)) set[folderOf(e)] = true; });
+    return Object.keys(set).sort();
+  }
+
   function renderRecent(){
     recentList.innerHTML = '';
     var q = ($('session-filter').value || '').trim().toLowerCase();
     var shown = q
-      ? library.filter(function(e){ return entryName(e).toLowerCase().indexOf(q) >= 0; })
+      ? library.filter(function(e){
+          return entryName(e).toLowerCase().indexOf(q) >= 0 ||
+                 folderOf(e).toLowerCase().indexOf(q) >= 0;
+        })
       : library;
     if (q && !shown.length){
       var none = document.createElement('div');
@@ -871,7 +882,35 @@
       return;
     }
 
-    shown.forEach(function(entry){
+    /* group headers, ungrouped last so a new session is easy to find */
+    var groups = {}, order = [];
+    shown.forEach(function(e){
+      var f = folderOf(e);
+      if (!groups[f]){ groups[f] = []; order.push(f); }
+      groups[f].push(e);
+    });
+    order.sort(function(a, b){
+      if (!a) return 1;
+      if (!b) return -1;
+      return a.localeCompare(b);
+    });
+
+    order.forEach(function(f){
+      if (order.length > 1 || f){
+        var head = document.createElement('div');
+        head.className = 'recent-group' + (f ? '' : ' loose');
+        head.textContent = f || 'Not in a folder';
+        var count = document.createElement('span');
+        count.className = 'recent-group-count';
+        count.textContent = groups[f].length;
+        head.appendChild(count);
+        recentList.appendChild(head);
+      }
+      groups[f].forEach(renderRow);
+    });
+    return;
+
+    function renderRow(entry){
       var row = document.createElement('div');
       row.className = 'recent-row';
 
@@ -959,8 +998,36 @@
       forget.title = 'Forget this entry';
       forget.addEventListener('click', function(e){ e.stopPropagation(); forgetEntry(entry.key); });
 
+      /* choosing a folder moves the session's directory on disk, so what you see
+         in the app and what you see in Explorer stay the same thing */
+      var move = document.createElement('select');
+      move.className = 'recent-folder';
+      move.title = 'Move this session to a folder';
+      function opt(value, label){
+        var o = document.createElement('option');
+        o.value = value; o.textContent = label;
+        if (folderOf(entry) === value) o.selected = true;
+        move.appendChild(o);
+      }
+      opt('', 'No folder');
+      allFolders().forEach(function(f){ if (f) opt(f, f); });
+      var mk = document.createElement('option');
+      mk.value = ' new'; mk.textContent = 'New folder…';
+      move.appendChild(mk);
+      move.addEventListener('click', function(e){ e.stopPropagation(); });
+      move.addEventListener('change', function(e){
+        e.stopPropagation();
+        var v = move.value;
+        if (v === ' new'){
+          v = (prompt('Folder name (use / to nest)', folderOf(entry)) || '').trim();
+          if (!v){ renderRecent(); return; }
+        }
+        setEntryFolder(entry, v);
+      });
+
       row.appendChild(kind);
       row.appendChild(main);
+      row.appendChild(move);
       row.appendChild(rename);
       row.appendChild(forget);
       row.addEventListener('click', function(){
@@ -968,7 +1035,19 @@
         openEntry(entry);
       });
       recentList.appendChild(row);
-    });
+    }
+  }
+
+  function setEntryFolder(entry, folder){
+    entry.folder = folder || '';
+    if (!entry.folder) delete entry.folder;
+    saveLibrary();
+    /* on the desktop the folder is real: move the directory to match */
+    if (DESKTOP && DESKTOP.moveSession){
+      DESKTOP.moveSession(entry.key, entry.folder || '').then(function(){ renderRecent(); });
+    } else {
+      renderRecent();
+    }
   }
 
   /* ---------- playback ---------- */
@@ -2265,6 +2344,29 @@
   });
 
   if (IS_FILE) $('file-note').classList.remove('hidden');
+
+  /* Show where the notes actually live, and let it be opened. Also surface what the
+     first run did with them, since a silent migration of real work is unnerving. */
+  if (DESKTOP && DESKTOP.dataDir){
+    DESKTOP.dataDir().then(function(info){
+      if (!info) return;
+      var el = $('notes-folder');
+      el.textContent = info.dir;
+      el.title = 'Notes folder (' + info.kind + ') - click to open';
+      el.classList.remove('hidden');
+      el.addEventListener('click', function(){ DESKTOP.reveal(info.dir); });
+      if (info.fellBack){
+        setNotice('Could not write beside the app, so notes are in ' + info.dir, 20000);
+      }
+      var m = info.migration;
+      if (m && m.migrated){
+        setNotice(m.intact
+          ? 'Moved ' + m.notesBefore + ' notes into ' + info.dir + '. The old copy was left in place.'
+          : 'Migration finished but counts differ (' + m.notesBefore + ' -> ' + m.notesAfter +
+            '). The old copy and a backup are intact.', 30000);
+      }
+    });
+  }
 
   showStart();   /* home and the player are exclusive views; start on home */
   renderNotes();

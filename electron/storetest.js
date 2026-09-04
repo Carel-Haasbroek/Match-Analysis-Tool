@@ -127,6 +127,15 @@ function main(){
      Object.values(fsx.paths).every((p) => !/[\\/:*?"<>|]/.test(path.basename(p))),
      JSON.stringify(fsx.paths));
 
+  /* moving back out must not invent a folder from the empty path */
+  ok('a session can be moved back to the top level', fsx.moveSession('vnotes:Jack_1.mp4_65939131', ''));
+  ok('and lands at the top level, not in a folder called session',
+     fs.existsSync(path.join(root, 'Jack round 1', 'session.json')) &&
+     !fs.existsSync(path.join(root, 'session')),
+     JSON.stringify(fsx.paths));
+  eq('still readable at the top level',
+     JSON.parse(fsx.get('vnotes:Jack_1.mp4_65939131')).length, 1);
+
   /* a key that is not a session must not break the store */
   fsx.set('vn:smoke', JSON.stringify({ hello: 'world' }));
   eq('a non-session key round-trips', fsx.get('vn:smoke'), JSON.stringify({ hello: 'world' }));
