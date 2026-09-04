@@ -1,0 +1,207 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Video Notes</title>
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+<div class="app">
+  <header class="topbar">
+    <h1>Video Notes</h1>
+    <div class="sep"></div>
+    <button type="button" id="load-btn">Load video</button>
+    <input type="file" id="file-input" accept="video/*">
+    <form class="url-field" id="top-url-form">
+      <input type="text" id="top-url-input" placeholder="Paste a YouTube link" spellcheck="false" aria-label="YouTube link">
+      <button type="submit">Open</button>
+    </form>
+    <button type="button" id="recent-btn">Recent</button>
+    <span class="file-name mono" id="file-name"></span>
+    <span class="status" id="status"></span>
+  </header>
+
+  <div class="workspace">
+    <section class="stage">
+      <div class="video-wrap" id="video-wrap">
+        <video id="video" playsinline preload="metadata"></video>
+        <div id="yt-holder"></div>
+        <canvas id="draw-canvas"></canvas>
+
+        <div class="start-screen" id="start-screen">
+          <button type="button" class="start-close hidden" id="start-close" title="Back to the video" aria-label="Close">&#10005;</button>
+          <div class="start-inner">
+            <p>Open a match from a YouTube link, or choose a video file from this device. Your notes stay on this device &mdash; nothing is uploaded.</p>
+
+            <div class="file-note hidden" id="file-note">
+              <strong>YouTube links need a local server.</strong>
+              This page is open straight from a file, and YouTube refuses to embed into a
+              <code>file://</code> page (it answers with &ldquo;error 153&rdquo;). Double-click
+              <code>serve.cmd</code> in this folder &mdash; it starts a server and reopens the tool
+              at <code>http://localhost:8000</code>. Local video files work fine either way.
+            </div>
+
+            <form class="url-field big" id="start-url-form">
+              <input type="text" id="url-input" placeholder="https://www.youtube.com/watch?v=&hellip;" spellcheck="false" aria-label="YouTube link">
+              <button type="submit" class="primary">Open link</button>
+            </form>
+
+            <div class="or">or</div>
+            <button type="button" id="empty-load-btn">Choose a video file</button>
+
+            <div class="recent-block">
+              <h3>Recent</h3>
+              <div class="recent-list" id="recent-list"></div>
+            </div>
+
+            <div class="backup-block">
+              <h3>All notes</h3>
+              <div class="backup-row">
+                <button type="button" id="backup-btn">Back up everything</button>
+                <button type="button" id="restore-btn">Restore backup</button>
+                <input type="file" id="restore-input" accept="application/json">
+              </div>
+              <p class="backup-hint">A backup holds every note for every video in one file.
+                Restoring only ever adds notes back &mdash; it never overwrites or deletes.</p>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="timeline">
+        <input type="range" id="seek" min="0" max="100" value="0" step="0.01" disabled aria-label="Seek">
+        <div class="mark-strip" id="mark-strip"></div>
+      </div>
+
+      <div class="controls-bar">
+        <button id="play-btn" disabled>Play</button>
+        <button id="back-btn" disabled title="Back 5s">&minus;5s</button>
+        <button id="fwd-btn" disabled title="Forward 5s">+5s</button>
+        <span class="time-display mono" id="time-display">0:00 / 0:00</span>
+        <span class="grow"></span>
+        <label class="hold-control" title="How long a drawing stays on screen once playback reaches it">
+          <span class="label">Hold</span>
+          <input type="range" id="hold-range" min="0.01" max="2" step="0.01" value="1" aria-label="Drawing hold time">
+          <span class="hold-value mono" id="hold-value">1.00s</span>
+        </label>
+        <button id="mark-btn" class="primary" disabled>Mark this moment</button>
+      </div>
+
+      <div class="draw-toolbar" id="draw-toolbar">
+        <div class="draw-row">
+          <span class="label">Tool</span>
+          <button type="button" class="tool-btn selected" data-tool="pen">Pen</button>
+          <button type="button" class="tool-btn" data-tool="arrow">Arrow</button>
+          <button type="button" class="tool-btn" data-tool="rect">Box</button>
+          <span class="label" style="margin-left:10px;">Color</span>
+          <span class="swatch-grid">
+            <button type="button" class="swatch selected" data-color="#ff2d78" style="background:#ff2d78" aria-label="Pink"></button>
+            <button type="button" class="swatch" data-color="#ff4d4d" style="background:#ff4d4d" aria-label="Red"></button>
+            <button type="button" class="swatch" data-color="#ff8c1a" style="background:#ff8c1a" aria-label="Orange"></button>
+            <button type="button" class="swatch" data-color="#ffb020" style="background:#ffb020" aria-label="Amber"></button>
+            <button type="button" class="swatch" data-color="#ffe83d" style="background:#ffe83d" aria-label="Yellow"></button>
+            <button type="button" class="swatch" data-color="#b6f542" style="background:#b6f542" aria-label="Lime"></button>
+            <button type="button" class="swatch" data-color="#3dff9e" style="background:#3dff9e" aria-label="Green"></button>
+            <button type="button" class="swatch" data-color="#35c9ff" style="background:#35c9ff" aria-label="Cyan"></button>
+            <button type="button" class="swatch" data-color="#4a7bff" style="background:#4a7bff" aria-label="Blue"></button>
+            <button type="button" class="swatch" data-color="#a86bff" style="background:#a86bff" aria-label="Violet"></button>
+            <button type="button" class="swatch" data-color="#ffffff" style="background:#ffffff" aria-label="White"></button>
+            <button type="button" class="swatch" data-color="#121212" style="background:#121212" aria-label="Black"></button>
+          </span>
+          <label class="swatch-custom" title="Any other colour">
+            <input type="color" id="custom-color" value="#ff2d78" aria-label="Custom colour">
+          </label>
+          <span class="label" style="margin-left:10px;">Brush</span>
+          <button type="button" class="size-btn selected" data-size="3" aria-label="Thin"><span class="dot" style="width:5px;height:5px"></span></button>
+          <button type="button" class="size-btn" data-size="6" aria-label="Medium"><span class="dot" style="width:9px;height:9px"></span></button>
+          <button type="button" class="size-btn" data-size="11" aria-label="Thick"><span class="dot" style="width:14px;height:14px"></span></button>
+          <span class="grow"></span>
+          <button type="button" id="undo-btn">Undo</button>
+          <button type="button" id="clear-btn">Clear drawing</button>
+        </div>
+        <textarea id="note-text" placeholder="Add a note for this moment (optional)"></textarea>
+        <div class="draw-actions">
+          <span class="draw-hint" id="draw-hint"></span>
+          <button type="button" id="cancel-btn">Cancel</button>
+          <button type="button" id="save-btn" class="primary">Save note</button>
+        </div>
+      </div>
+    </section>
+
+    <aside class="notes-panel">
+      <header>
+        <div class="panel-tabs" role="tablist">
+          <button type="button" class="panel-tab selected" data-pane="notes" role="tab" aria-selected="true">
+            <span id="notes-heading">Notes</span>
+          </button>
+          <button type="button" class="panel-tab" data-pane="summary" role="tab" aria-selected="false">Summary</button>
+        </div>
+        <span class="grow"></span>
+        <button type="button" id="export-btn">Export</button>
+        <button type="button" id="import-btn">Import</button>
+        <input type="file" id="import-input" accept="application/json">
+      </header>
+
+      <div class="pane" id="pane-notes">
+        <div class="flat-banner hidden" id="flat-banner">
+          <span id="flat-banner-text"></span>
+          <button type="button" id="recover-btn">Recover drawings</button>
+        </div>
+        <div class="notes-list" id="notes-list"></div>
+      </div>
+
+      <div class="pane hidden" id="pane-summary">
+        <section class="summary-section">
+          <h3>Notes</h3>
+          <div class="summary-notes" id="summary-notes"></div>
+        </section>
+        <section class="summary-section summary-input">
+          <h3>Summary</h3>
+          <textarea id="summary-text" placeholder="Your thoughts on this match — patterns, what worked, what to fix…"></textarea>
+          <div class="summary-status" id="summary-status"></div>
+        </section>
+      </div>
+    </aside>
+  </div>
+</div>
+
+<div class="lightbox" id="lightbox">
+  <div class="lightbox-panel">
+    <img id="lightbox-img" alt="Note drawing">
+    <div class="note-time mono" id="lightbox-time" style="margin-top:12px"></div>
+    <div class="lightbox-text" id="lightbox-text"></div>
+    <div class="lightbox-actions">
+      <button type="button" id="lightbox-delete" class="danger">Delete</button>
+      <button type="button" id="lightbox-download">Download image</button>
+      <button type="button" id="lightbox-jump" class="primary">Jump to this moment</button>
+      <button type="button" id="lightbox-close">Close</button>
+    </div>
+  </div>
+</div>
+
+<div class="lightbox" id="recover">
+  <div class="lightbox-panel">
+    <h2 class="recover-title">Recover this drawing</h2>
+    <div class="note-time mono" id="recover-time"></div>
+    <div class="recover-grid">
+      <figure>
+        <figcaption>Saved picture</figcaption>
+        <img id="recover-before" alt="The note as it was saved">
+      </figure>
+      <figure>
+        <figcaption>Recovered drawing</figcaption>
+        <img id="recover-after" class="checker" alt="The drawing lifted off the frame">
+      </figure>
+    </div>
+    <p class="recover-hint" id="recover-hint"></p>
+    <div class="lightbox-actions">
+      <button type="button" id="recover-skip">Skip this one</button>
+      <button type="button" id="recover-accept" class="primary">Use this drawing</button>
+    </div>
+  </div>
+</div>
+
+<script src="app.js"></script>
+</body>
+</html>

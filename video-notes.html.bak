@@ -1,0 +1,651 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Video Notes</title>
+<style>
+  :root{
+    --bg:#1a1d21; --panel:#212429; --panel-2:#282c32; --border:#383e46;
+    --text:#eae7e1; --text-dim:#9298a1; --accent:#e0a63a; --accent-dim:rgba(224,166,58,.16);
+    --danger:#d9634f; --radius:8px;
+  }
+  *{ box-sizing:border-box; }
+  html,body{ margin:0; padding:0; min-height:100%; background:var(--bg); color:var(--text);
+    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Helvetica,Arial,sans-serif; }
+  .mono{ font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace; }
+  .app{ display:flex; flex-direction:column; min-height:100vh; }
+
+  .topbar{ display:flex; align-items:center; gap:12px; padding:14px 20px;
+    border-bottom:1px solid var(--border); background:var(--panel); flex-wrap:wrap; }
+  .topbar h1{ font-size:1.05rem; font-weight:600; margin:0; }
+  .sep{ width:1px; height:20px; background:var(--border); }
+  .file-name{ color:var(--text-dim); font-size:.88rem; overflow:hidden; text-overflow:ellipsis;
+    white-space:nowrap; max-width:280px; }
+  .status{ color:var(--text-dim); font-size:.82rem; margin-left:auto; }
+
+  button{ font-family:inherit; font-size:.9rem; cursor:pointer; border-radius:6px;
+    border:1px solid var(--border); background:var(--panel-2); color:var(--text); padding:8px 14px;
+    transition:border-color .15s ease, background .15s ease; }
+  button:hover:not(:disabled){ border-color:#4a515b; }
+  button:focus-visible, input:focus-visible, textarea:focus-visible{ outline:2px solid var(--accent); outline-offset:2px; }
+  button.primary{ background:var(--accent); border-color:var(--accent); color:#20180a; font-weight:600; }
+  button.primary:hover:not(:disabled){ background:#eab654; }
+  button.danger{ color:var(--danger); }
+  button:disabled{ opacity:.45; cursor:not-allowed; }
+  input[type=file]{ display:none; }
+
+  .workspace{ flex:1; display:flex; min-height:0; }
+  .stage{ flex:1; display:flex; flex-direction:column; padding:20px; gap:14px; min-width:0; }
+
+  .video-wrap{ position:relative; width:100%; aspect-ratio:16/9; background:#000;
+    border-radius:var(--radius); overflow:hidden; border:1px solid var(--border); }
+  .video-wrap video{ position:absolute; inset:0; width:100%; height:100%; object-fit:contain; background:#000; }
+  .video-wrap canvas{ position:absolute; inset:0; width:100%; height:100%; display:none;
+    touch-action:none; cursor:crosshair; }
+  .empty-stage{ position:absolute; inset:0; display:flex; flex-direction:column; align-items:center;
+    justify-content:center; gap:16px; text-align:center; padding:24px; background:var(--panel); }
+  .empty-stage p{ color:var(--text-dim); max-width:360px; margin:0; font-size:.92rem; line-height:1.55; }
+  .empty-stage.hidden{ display:none; }
+
+  .timeline{ display:flex; flex-direction:column; gap:2px; }
+  .timeline input[type=range]{ width:100%; margin:0; accent-color:var(--accent); height:20px; }
+  .mark-strip{ position:relative; height:12px; }
+  .mark{ position:absolute; top:0; width:3px; height:10px; background:var(--accent);
+    border-radius:2px; cursor:pointer; transform:translateX(-1.5px); }
+  .mark:hover{ height:12px; background:#f4c56a; }
+
+  .controls-bar{ display:flex; align-items:center; gap:10px; flex-wrap:wrap; }
+  .time-display{ color:var(--text-dim); font-size:.85rem; min-width:100px; }
+  .grow{ flex:1; }
+
+  .draw-toolbar{ display:none; flex-direction:column; gap:10px; background:var(--panel);
+    border:1px solid var(--border); border-radius:var(--radius); padding:14px; }
+  .draw-toolbar.active{ display:flex; }
+  .draw-row{ display:flex; align-items:center; gap:8px; flex-wrap:wrap; }
+  .swatch{ width:22px; height:22px; border-radius:50%; border:2px solid transparent; padding:0; }
+  .swatch.selected{ border-color:var(--text); }
+  .size-btn{ width:32px; height:32px; padding:0; display:flex; align-items:center; justify-content:center; }
+  .size-btn .dot{ border-radius:50%; background:var(--text); }
+  .size-btn.selected{ border-color:var(--accent); background:var(--accent-dim); }
+  .tool-btn.selected{ border-color:var(--accent); background:var(--accent-dim); }
+  .draw-toolbar textarea{ width:100%; min-height:58px; resize:vertical; background:var(--panel-2);
+    border:1px solid var(--border); border-radius:6px; color:var(--text); font-family:inherit;
+    font-size:.9rem; padding:8px 10px; }
+  .draw-actions{ display:flex; gap:8px; justify-content:flex-end; }
+  .label{ color:var(--text-dim); font-size:.8rem; }
+
+  .notes-panel{ width:330px; flex-shrink:0; border-left:1px solid var(--border);
+    background:var(--panel); display:flex; flex-direction:column; min-height:0; }
+  .notes-panel header{ display:flex; align-items:center; gap:8px; padding:14px 14px 10px;
+    border-bottom:1px solid var(--border); }
+  .notes-panel h2{ font-size:.9rem; font-weight:600; margin:0; }
+  .notes-panel header button{ padding:5px 9px; font-size:.78rem; }
+  .notes-list{ flex:1; overflow-y:auto; padding:8px; }
+  .note-empty{ color:var(--text-dim); font-size:.85rem; padding:14px; line-height:1.55; }
+  .note-item{ display:flex; gap:10px; padding:8px; border-radius:6px; cursor:pointer; align-items:flex-start; }
+  .note-item:hover{ background:var(--panel-2); }
+  .note-thumb{ width:68px; height:42px; object-fit:cover; border-radius:4px; flex-shrink:0;
+    border:1px solid var(--border); background:#000; cursor:zoom-in; }
+  .note-body{ flex:1; min-width:0; }
+  .note-time{ color:var(--accent); font-size:.8rem; font-weight:600; }
+  .note-text{ color:var(--text-dim); font-size:.82rem; line-height:1.4; margin-top:3px;
+    display:-webkit-box; -webkit-line-clamp:3; -webkit-box-orient:vertical; overflow:hidden; }
+  .note-del{ background:transparent; border:none; color:var(--text-dim); padding:3px 6px; }
+  .note-del:hover{ color:var(--danger); }
+
+  .lightbox{ position:fixed; inset:0; background:rgba(10,11,13,.88); display:none;
+    align-items:center; justify-content:center; padding:24px; z-index:50; }
+  .lightbox.open{ display:flex; }
+  .lightbox-panel{ background:var(--panel); border:1px solid var(--border); border-radius:var(--radius);
+    max-width:760px; width:100%; max-height:90vh; overflow:auto; padding:16px; }
+  .lightbox-panel img{ width:100%; border-radius:6px; display:block; background:#000; }
+  .lightbox-text{ font-size:.92rem; line-height:1.55; margin-top:10px; white-space:pre-wrap; }
+  .lightbox-actions{ display:flex; gap:8px; margin-top:14px; justify-content:flex-end; flex-wrap:wrap; }
+
+  @media (max-width:880px){
+    .workspace{ flex-direction:column; }
+    .notes-panel{ width:auto; border-left:none; border-top:1px solid var(--border); max-height:45vh; }
+  }
+</style>
+</head>
+<body>
+<div class="app">
+  <header class="topbar">
+    <h1>Video Notes</h1>
+    <div class="sep"></div>
+    <button type="button" id="load-btn">Load video</button>
+    <input type="file" id="file-input" accept="video/*">
+    <span class="file-name mono" id="file-name"></span>
+    <span class="status" id="status"></span>
+  </header>
+
+  <div class="workspace">
+    <section class="stage">
+      <div class="video-wrap" id="video-wrap">
+        <video id="video" playsinline preload="metadata"></video>
+        <canvas id="draw-canvas"></canvas>
+        <div class="empty-stage" id="empty-stage">
+          <p>Choose a local video file, or drop one here. The video and your notes stay on this device — nothing is uploaded.</p>
+          <button type="button" class="primary" id="empty-load-btn">Choose a video file</button>
+        </div>
+      </div>
+
+      <div class="timeline">
+        <input type="range" id="seek" min="0" max="100" value="0" step="0.01" disabled aria-label="Seek">
+        <div class="mark-strip" id="mark-strip"></div>
+      </div>
+
+      <div class="controls-bar">
+        <button id="play-btn" disabled>Play</button>
+        <button id="back-btn" disabled title="Back 5s">−5s</button>
+        <button id="fwd-btn" disabled title="Forward 5s">+5s</button>
+        <span class="time-display mono" id="time-display">0:00 / 0:00</span>
+        <span class="grow"></span>
+        <button id="mark-btn" class="primary" disabled>Mark this moment</button>
+      </div>
+
+      <div class="draw-toolbar" id="draw-toolbar">
+        <div class="draw-row">
+          <span class="label">Tool</span>
+          <button type="button" class="tool-btn selected" data-tool="pen">Pen</button>
+          <button type="button" class="tool-btn" data-tool="arrow">Arrow</button>
+          <button type="button" class="tool-btn" data-tool="rect">Box</button>
+          <span class="label" style="margin-left:10px;">Color</span>
+          <button type="button" class="swatch selected" data-color="#e0473f" style="background:#e0473f" aria-label="Red"></button>
+          <button type="button" class="swatch" data-color="#e0a63a" style="background:#e0a63a" aria-label="Amber"></button>
+          <button type="button" class="swatch" data-color="#4fb477" style="background:#4fb477" aria-label="Green"></button>
+          <button type="button" class="swatch" data-color="#4a90d9" style="background:#4a90d9" aria-label="Blue"></button>
+          <button type="button" class="swatch" data-color="#f4f1ea" style="background:#f4f1ea" aria-label="White"></button>
+          <span class="label" style="margin-left:10px;">Brush</span>
+          <button type="button" class="size-btn selected" data-size="3" aria-label="Thin"><span class="dot" style="width:5px;height:5px"></span></button>
+          <button type="button" class="size-btn" data-size="6" aria-label="Medium"><span class="dot" style="width:9px;height:9px"></span></button>
+          <button type="button" class="size-btn" data-size="11" aria-label="Thick"><span class="dot" style="width:14px;height:14px"></span></button>
+          <span class="grow"></span>
+          <button type="button" id="undo-btn">Undo</button>
+          <button type="button" id="clear-btn">Clear drawing</button>
+        </div>
+        <textarea id="note-text" placeholder="Add a note for this moment (optional)"></textarea>
+        <div class="draw-actions">
+          <button type="button" id="cancel-btn">Cancel</button>
+          <button type="button" id="save-btn" class="primary">Save note</button>
+        </div>
+      </div>
+    </section>
+
+    <aside class="notes-panel">
+      <header>
+        <h2 id="notes-heading">Notes</h2>
+        <span class="grow"></span>
+        <button type="button" id="export-btn">Export</button>
+        <button type="button" id="import-btn">Import</button>
+        <input type="file" id="import-input" accept="application/json">
+      </header>
+      <div class="notes-list" id="notes-list"></div>
+    </aside>
+  </div>
+</div>
+
+<div class="lightbox" id="lightbox">
+  <div class="lightbox-panel">
+    <img id="lightbox-img" alt="Note drawing">
+    <div class="note-time mono" id="lightbox-time" style="margin-top:12px"></div>
+    <div class="lightbox-text" id="lightbox-text"></div>
+    <div class="lightbox-actions">
+      <button type="button" id="lightbox-delete" class="danger">Delete</button>
+      <button type="button" id="lightbox-download">Download image</button>
+      <button type="button" id="lightbox-jump" class="primary">Jump to this moment</button>
+      <button type="button" id="lightbox-close">Close</button>
+    </div>
+  </div>
+</div>
+
+<script>
+(function(){
+  "use strict";
+
+  var $ = function(id){ return document.getElementById(id); };
+
+  var video = $('video'), canvas = $('draw-canvas'), ctx = canvas.getContext('2d');
+  var frameBuf = document.createElement('canvas'), fctx = frameBuf.getContext('2d');
+  var fileInput = $('file-input'), fileNameEl = $('file-name'), statusEl = $('status');
+  var emptyStage = $('empty-stage'), videoWrap = $('video-wrap');
+  var seek = $('seek'), markStrip = $('mark-strip');
+  var playBtn = $('play-btn'), backBtn = $('back-btn'), fwdBtn = $('fwd-btn');
+  var timeDisplay = $('time-display'), markBtn = $('mark-btn');
+  var drawToolbar = $('draw-toolbar'), noteTextInput = $('note-text');
+  var notesList = $('notes-list'), notesHeading = $('notes-heading');
+  var lightbox = $('lightbox'), lightboxImg = $('lightbox-img'), lightboxTime = $('lightbox-time'),
+      lightboxText = $('lightbox-text');
+
+  var notes = [], videoKey = null, currentFileName = '';
+  var drawing = false, shapes = [], activeShape = null, startPt = null;
+  var tool = 'pen', color = '#e0473f', size = 3, capturedTime = 0, lightboxNote = null;
+  var objectUrl = null;
+
+  /* ---------- storage: window.storage -> IndexedDB -> memory ---------- */
+  var memStore = {};
+  var store = (function(){
+    var hasWinStorage = (typeof window.storage === 'object' && window.storage &&
+                         typeof window.storage.get === 'function');
+    var db = null, dbReady = null;
+
+    function openDB(){
+      if (dbReady) return dbReady;
+      dbReady = new Promise(function(resolve){
+        try{
+          var req = indexedDB.open('video-notes', 1);
+          req.onupgradeneeded = function(){
+            req.result.createObjectStore('notes');
+          };
+          req.onsuccess = function(){ db = req.result; resolve(true); };
+          req.onerror = function(){ resolve(false); };
+        }catch(e){ resolve(false); }
+      });
+      return dbReady;
+    }
+
+    function idbOp(mode, fn){
+      return openDB().then(function(ok){
+        if (!ok || !db) return null;
+        return new Promise(function(resolve){
+          try{
+            var tx = db.transaction('notes', mode);
+            var req = fn(tx.objectStore('notes'));
+            req.onsuccess = function(){ resolve(req.result); };
+            req.onerror = function(){ resolve(null); };
+          }catch(e){ resolve(null); }
+        });
+      });
+    }
+
+    return {
+      label: hasWinStorage ? 'saved in this session' : 'saved on this device',
+      get: function(key){
+        if (hasWinStorage){
+          return window.storage.get(key, false)
+            .then(function(r){ return r && r.value ? JSON.parse(r.value) : null; })
+            .catch(function(){ return memStore[key] || null; });
+        }
+        return idbOp('readonly', function(s){ return s.get(key); })
+          .then(function(v){ return v != null ? v : (memStore[key] || null); });
+      },
+      set: function(key, value){
+        memStore[key] = value;
+        if (hasWinStorage){
+          return window.storage.set(key, JSON.stringify(value), false).catch(function(){});
+        }
+        return idbOp('readwrite', function(s){ return s.put(value, key); });
+      }
+    };
+  })();
+
+  /* ---------- helpers ---------- */
+  function fmt(sec){
+    if (!isFinite(sec) || sec < 0) sec = 0;
+    var h = Math.floor(sec/3600), m = Math.floor((sec%3600)/60), s = Math.floor(sec%60);
+    var mm = h > 0 ? String(m).padStart(2,'0') : String(m);
+    return (h > 0 ? h + ':' : '') + mm + ':' + String(s).padStart(2,'0');
+  }
+  function keyFor(file){
+    return 'vnotes:' + (file.name + '_' + file.size).replace(/[^a-zA-Z0-9_.-]/g,'_').slice(0,150);
+  }
+  function setStatus(msg){ statusEl.textContent = msg; }
+
+  /* ---------- loading a file ---------- */
+  $('load-btn').addEventListener('click', function(){ fileInput.click(); });
+  $('empty-load-btn').addEventListener('click', function(){ fileInput.click(); });
+
+  fileInput.addEventListener('change', function(e){
+    var f = e.target.files && e.target.files[0];
+    if (f) loadVideo(f);
+    fileInput.value = '';
+  });
+
+  videoWrap.addEventListener('dragover', function(e){ e.preventDefault(); });
+  videoWrap.addEventListener('drop', function(e){
+    e.preventDefault();
+    var f = e.dataTransfer.files && e.dataTransfer.files[0];
+    if (f && f.type.indexOf('video/') === 0) loadVideo(f);
+  });
+
+  function loadVideo(file){
+    if (objectUrl) URL.revokeObjectURL(objectUrl);
+    objectUrl = URL.createObjectURL(file);
+    video.src = objectUrl;
+    video.load();
+    currentFileName = file.name;
+    fileNameEl.textContent = file.name;
+    emptyStage.classList.add('hidden');
+    [playBtn, backBtn, fwdBtn, markBtn, seek].forEach(function(el){ el.disabled = false; });
+    videoKey = keyFor(file);
+    exitDraw();
+    store.get(videoKey).then(function(saved){
+      notes = Array.isArray(saved) ? saved : [];
+      renderNotes();
+      renderMarks();
+    });
+  }
+
+  video.addEventListener('error', function(){
+    setStatus('This browser could not decode that video file.');
+  });
+
+  video.addEventListener('loadedmetadata', function(){
+    if (video.videoWidth && video.videoHeight){
+      videoWrap.style.aspectRatio = video.videoWidth + ' / ' + video.videoHeight;
+    }
+    seek.max = video.duration || 100;
+    setStatus('');
+    updateTime();
+    renderMarks();
+  });
+
+  /* ---------- playback ---------- */
+  playBtn.addEventListener('click', function(){
+    if (video.paused) video.play(); else video.pause();
+  });
+  video.addEventListener('play', function(){ playBtn.textContent = 'Pause'; });
+  video.addEventListener('pause', function(){ playBtn.textContent = 'Play'; });
+  backBtn.addEventListener('click', function(){ video.currentTime = Math.max(0, video.currentTime - 5); });
+  fwdBtn.addEventListener('click', function(){ video.currentTime = Math.min(video.duration || 0, video.currentTime + 5); });
+
+  video.addEventListener('timeupdate', function(){
+    if (document.activeElement !== seek) seek.value = video.currentTime;
+    updateTime();
+  });
+  seek.addEventListener('input', function(){ video.currentTime = parseFloat(seek.value); });
+
+  function updateTime(){
+    timeDisplay.textContent = fmt(video.currentTime) + ' / ' + fmt(video.duration || 0);
+  }
+
+  document.addEventListener('keydown', function(e){
+    if (e.target.tagName === 'TEXTAREA' || e.target.tagName === 'INPUT') return;
+    if (e.key === 'Escape'){ closeLightbox(); return; }
+    if (video.disabled || !video.src) return;
+    if (e.code === 'Space'){ e.preventDefault(); playBtn.click(); }
+    if (e.key === 'ArrowLeft') backBtn.click();
+    if (e.key === 'ArrowRight') fwdBtn.click();
+  });
+
+  /* ---------- draw mode ---------- */
+  markBtn.addEventListener('click', enterDraw);
+
+  function enterDraw(){
+    video.pause();
+    capturedTime = video.currentTime;
+    var vw = video.videoWidth || 960, vh = video.videoHeight || 540;
+    var scale = Math.min(1, 960 / vw);
+    var w = Math.round(vw * scale), h = Math.round(vh * scale);
+    canvas.width = w; canvas.height = h;
+    frameBuf.width = w; frameBuf.height = h;
+    try{ fctx.drawImage(video, 0, 0, w, h); }
+    catch(err){ setStatus('Could not capture this frame.'); }
+    shapes = [];
+    redraw();
+    canvas.style.display = 'block';
+    drawToolbar.classList.add('active');
+    drawing = true;
+    noteTextInput.value = '';
+  }
+
+  function exitDraw(){
+    canvas.style.display = 'none';
+    drawToolbar.classList.remove('active');
+    drawing = false;
+    shapes = [];
+    activeShape = null;
+  }
+  $('cancel-btn').addEventListener('click', exitDraw);
+
+  function drawShape(s){
+    ctx.strokeStyle = s.color;
+    ctx.fillStyle = s.color;
+    ctx.lineWidth = s.size;
+    ctx.lineCap = 'round';
+    ctx.lineJoin = 'round';
+    if (s.tool === 'pen'){
+      ctx.beginPath();
+      for (var i = 0; i < s.points.length; i++){
+        var p = s.points[i];
+        if (i === 0) ctx.moveTo(p.x, p.y); else ctx.lineTo(p.x, p.y);
+      }
+      if (s.points.length === 1){ ctx.lineTo(s.points[0].x + 0.1, s.points[0].y); }
+      ctx.stroke();
+    } else if (s.tool === 'rect'){
+      ctx.strokeRect(s.a.x, s.a.y, s.b.x - s.a.x, s.b.y - s.a.y);
+    } else if (s.tool === 'arrow'){
+      var dx = s.b.x - s.a.x, dy = s.b.y - s.a.y;
+      var ang = Math.atan2(dy, dx);
+      var head = Math.max(12, s.size * 4);
+      ctx.beginPath(); ctx.moveTo(s.a.x, s.a.y); ctx.lineTo(s.b.x, s.b.y); ctx.stroke();
+      ctx.beginPath();
+      ctx.moveTo(s.b.x, s.b.y);
+      ctx.lineTo(s.b.x - head * Math.cos(ang - Math.PI/7), s.b.y - head * Math.sin(ang - Math.PI/7));
+      ctx.lineTo(s.b.x - head * Math.cos(ang + Math.PI/7), s.b.y - head * Math.sin(ang + Math.PI/7));
+      ctx.closePath(); ctx.fill();
+    }
+  }
+
+  function redraw(){
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    ctx.drawImage(frameBuf, 0, 0);
+    shapes.forEach(drawShape);
+    if (activeShape) drawShape(activeShape);
+  }
+
+  function pointAt(e){
+    var r = canvas.getBoundingClientRect();
+    return {
+      x: (e.clientX - r.left) * (canvas.width / r.width),
+      y: (e.clientY - r.top) * (canvas.height / r.height)
+    };
+  }
+
+  canvas.addEventListener('pointerdown', function(e){
+    if (!drawing) return;
+    e.preventDefault();
+    canvas.setPointerCapture(e.pointerId);
+    startPt = pointAt(e);
+    activeShape = (tool === 'pen')
+      ? { tool:'pen', color:color, size:size, points:[startPt] }
+      : { tool:tool, color:color, size:size, a:startPt, b:startPt };
+    redraw();
+  });
+
+  canvas.addEventListener('pointermove', function(e){
+    if (!activeShape) return;
+    var p = pointAt(e);
+    if (activeShape.tool === 'pen') activeShape.points.push(p);
+    else activeShape.b = p;
+    redraw();
+  });
+
+  ['pointerup','pointercancel'].forEach(function(evt){
+    canvas.addEventListener(evt, function(){
+      if (activeShape){ shapes.push(activeShape); activeShape = null; redraw(); }
+    });
+  });
+
+  function pickGroup(sel, attr, cb){
+    document.querySelectorAll(sel).forEach(function(btn){
+      btn.addEventListener('click', function(){
+        document.querySelectorAll(sel).forEach(function(b){ b.classList.remove('selected'); });
+        btn.classList.add('selected');
+        cb(btn.dataset[attr]);
+      });
+    });
+  }
+  pickGroup('.tool-btn', 'tool', function(v){ tool = v; });
+  pickGroup('.swatch', 'color', function(v){ color = v; });
+  pickGroup('.size-btn', 'size', function(v){ size = parseInt(v, 10); });
+
+  $('undo-btn').addEventListener('click', function(){ shapes.pop(); redraw(); });
+  $('clear-btn').addEventListener('click', function(){ shapes = []; redraw(); });
+
+  $('save-btn').addEventListener('click', function(){
+    var note = {
+      id: Date.now() + '-' + Math.random().toString(36).slice(2,7),
+      time: capturedTime,
+      text: noteTextInput.value.trim(),
+      image: canvas.toDataURL('image/jpeg', 0.72)
+    };
+    notes.push(note);
+    notes.sort(function(a,b){ return a.time - b.time; });
+    persist();
+    renderNotes();
+    renderMarks();
+    exitDraw();
+  });
+
+  function persist(){
+    if (!videoKey) return;
+    store.set(videoKey, notes);
+    setStatus(notes.length + ' note' + (notes.length === 1 ? '' : 's') + ' · ' + store.label);
+  }
+
+  /* ---------- notes list ---------- */
+  function renderNotes(){
+    notesList.innerHTML = '';
+    notesHeading.textContent = notes.length ? 'Notes (' + notes.length + ')' : 'Notes';
+    if (!notes.length){
+      var empty = document.createElement('div');
+      empty.className = 'note-empty';
+      empty.textContent = 'No notes yet. Pause where you want, then click "Mark this moment" to draw on the frame and save it.';
+      notesList.appendChild(empty);
+      setStatus('');
+      return;
+    }
+    setStatus(notes.length + ' note' + (notes.length === 1 ? '' : 's') + ' · ' + store.label);
+
+    notes.forEach(function(note){
+      var item = document.createElement('div');
+      item.className = 'note-item';
+
+      var thumb = document.createElement('img');
+      thumb.className = 'note-thumb';
+      thumb.src = note.image;
+      thumb.alt = 'Drawing at ' + fmt(note.time);
+      thumb.addEventListener('click', function(e){ e.stopPropagation(); openLightbox(note); });
+
+      var body = document.createElement('div');
+      body.className = 'note-body';
+      var t = document.createElement('div');
+      t.className = 'note-time mono';
+      t.textContent = fmt(note.time);
+      body.appendChild(t);
+      if (note.text){
+        var tx = document.createElement('div');
+        tx.className = 'note-text';
+        tx.textContent = note.text;
+        body.appendChild(tx);
+      }
+
+      var del = document.createElement('button');
+      del.className = 'note-del';
+      del.textContent = '\u2715';
+      del.title = 'Delete note';
+      del.addEventListener('click', function(e){ e.stopPropagation(); removeNote(note.id); });
+
+      item.appendChild(thumb); item.appendChild(body); item.appendChild(del);
+      item.addEventListener('click', function(){ jumpTo(note.time); });
+      notesList.appendChild(item);
+    });
+  }
+
+  function renderMarks(){
+    markStrip.innerHTML = '';
+    var d = video.duration;
+    if (!d || !isFinite(d)) return;
+    notes.forEach(function(note){
+      var m = document.createElement('div');
+      m.className = 'mark';
+      m.style.left = ((note.time / d) * 100) + '%';
+      m.title = fmt(note.time) + (note.text ? ' — ' + note.text : '');
+      m.addEventListener('click', function(){ jumpTo(note.time); });
+      markStrip.appendChild(m);
+    });
+  }
+
+  function jumpTo(time){
+    video.pause();
+    video.currentTime = time;
+    seek.value = time;
+    updateTime();
+  }
+
+  function removeNote(id){
+    if (!confirm('Delete this note?')) return;
+    notes = notes.filter(function(n){ return n.id !== id; });
+    persist(); renderNotes(); renderMarks();
+    if (lightboxNote && lightboxNote.id === id) closeLightbox();
+  }
+
+  /* ---------- export / import ---------- */
+  function downloadBlob(blob, name){
+    var url = URL.createObjectURL(blob);
+    var a = document.createElement('a');
+    a.href = url; a.download = name;
+    document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(function(){ URL.revokeObjectURL(url); }, 1000);
+  }
+
+  $('export-btn').addEventListener('click', function(){
+    if (!notes.length){ setStatus('Nothing to export yet.'); return; }
+    var payload = { video: currentFileName, exported: new Date().toISOString(), notes: notes };
+    downloadBlob(new Blob([JSON.stringify(payload, null, 2)], { type:'application/json' }),
+      (currentFileName || 'video') + '-notes.json');
+  });
+
+  $('import-btn').addEventListener('click', function(){ $('import-input').click(); });
+  $('import-input').addEventListener('change', function(e){
+    var f = e.target.files && e.target.files[0];
+    if (!f) return;
+    var reader = new FileReader();
+    reader.onload = function(){
+      try{
+        var data = JSON.parse(reader.result);
+        var incoming = Array.isArray(data) ? data : data.notes;
+        if (!Array.isArray(incoming)) throw new Error('bad format');
+        notes = notes.concat(incoming).sort(function(a,b){ return a.time - b.time; });
+        persist(); renderNotes(); renderMarks();
+      }catch(err){
+        setStatus('That file is not a notes export.');
+      }
+    };
+    reader.readAsText(f);
+    e.target.value = '';
+  });
+
+  /* ---------- lightbox ---------- */
+  function openLightbox(note){
+    lightboxNote = note;
+    lightboxImg.src = note.image;
+    lightboxTime.textContent = fmt(note.time);
+    lightboxText.textContent = note.text || '';
+    lightbox.classList.add('open');
+  }
+  function closeLightbox(){ lightbox.classList.remove('open'); lightboxNote = null; }
+
+  $('lightbox-close').addEventListener('click', closeLightbox);
+  lightbox.addEventListener('click', function(e){ if (e.target === lightbox) closeLightbox(); });
+  $('lightbox-jump').addEventListener('click', function(){
+    if (lightboxNote){ jumpTo(lightboxNote.time); closeLightbox(); }
+  });
+  $('lightbox-delete').addEventListener('click', function(){
+    if (lightboxNote) removeNote(lightboxNote.id);
+  });
+  $('lightbox-download').addEventListener('click', function(){
+    if (!lightboxNote) return;
+    var a = document.createElement('a');
+    a.href = lightboxNote.image;
+    a.download = 'note-' + fmt(lightboxNote.time).replace(/:/g,'-') + '.jpg';
+    document.body.appendChild(a); a.click(); a.remove();
+  });
+
+  renderNotes();
+})();
+</script>
+</body>
+</html>
