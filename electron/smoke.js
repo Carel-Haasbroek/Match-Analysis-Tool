@@ -55,6 +55,31 @@ app.whenReady().then(() => {
       check('no page scrollbar', probe.noPageScroll);
       check('export button reads "Export all notes"', probe.exportBtn === 'Export all notes', probe.exportBtn);
 
+      /* Styles are easy to delete by accident when removing a neighbouring block, and
+         a missing rule shows up as a working button that renders as unstyled soup.
+         Assert the modal is actually laid out, not merely present in the DOM. */
+      const modal = await win.webContents.executeJavaScript(`(function(){
+        document.getElementById('view-summary-btn').click();
+        var panel = document.querySelector('.summary-modal-panel');
+        var body  = document.querySelector('.summary-modal-body');
+        var cs = getComputedStyle(panel), cb = getComputedStyle(body);
+        var r = panel.getBoundingClientRect();
+        var out = {
+          open: document.getElementById('summary-modal').classList.contains('open'),
+          panelIsFlex: cs.display === 'flex',
+          bodyIsGrid: cb.display === 'grid',
+          twoColumns: cb.gridTemplateColumns.split(' ').length === 2,
+          bounded: r.width > 0 && r.width <= window.innerWidth && r.height <= window.innerHeight
+        };
+        document.getElementById('summary-modal-close').click();
+        return out;
+      })()`);
+      check('summary modal opens', modal.open);
+      check('summary modal panel is styled (flex, bounded)', modal.panelIsFlex && modal.bounded,
+            JSON.stringify(modal));
+      check('summary modal body is a two-column grid', modal.bodyIsGrid && modal.twoColumns,
+            JSON.stringify(modal));
+
       /* the storage bridge must actually round-trip through the main process */
       const rt = await win.webContents.executeJavaScript(`(async function(){
         await window.storage.set('vn:smoke', JSON.stringify({ hello: 'world' }));
