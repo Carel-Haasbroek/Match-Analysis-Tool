@@ -55,7 +55,9 @@
           <div class="backup-row">
             <button type="button" id="backup-btn">Export all notes</button>
             <button type="button" id="restore-btn">Import backup</button>
+            <button type="button" id="open-clip-btn">Open shared clip</button>
             <input type="file" id="restore-input" accept="application/json">
+            <input type="file" id="clip-input" accept="application/json">
           </div>
           <p class="backup-hint">One file holding every note, every summary and every session name.
             Importing only ever adds notes back &mdash; it never overwrites or deletes.</p>
@@ -144,6 +146,14 @@
       </div>
 
       <div class="controls-bar">
+        <div class="clip-control hidden" id="clip-control">
+          <span class="label">Clip</span>
+          <button type="button" id="clip-in-btn" title="Set the clip's start at the current moment">Set in</button>
+          <button type="button" id="clip-out-btn" title="Set the clip's end at the current moment">Set out</button>
+          <span class="clip-range mono" id="clip-range">&mdash;</span>
+          <button type="button" id="clip-make-btn" disabled title="Create a clip session from these marks">Make clip</button>
+          <button type="button" id="clip-reset-btn" title="Clear the marks">&#10005;</button>
+        </div>
         <span class="grow"></span>
         <label class="hold-control" title="How long a drawing stays on screen once playback reaches it">
           <span class="label">Hold</span>
@@ -203,6 +213,7 @@
           <button type="button" class="panel-tab" data-pane="summary" role="tab" aria-selected="false">Summary</button>
         </div>
         <span class="grow"></span>
+        <button type="button" class="hidden" id="share-clip-btn" title="Save this clip as a file you can send to someone">Share clip</button>
         <button type="button" id="export-btn">Export</button>
         <button type="button" id="import-btn">Import</button>
         <input type="file" id="import-input" accept="application/json">

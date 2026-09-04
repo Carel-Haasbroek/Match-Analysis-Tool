@@ -336,7 +336,7 @@
     return 'YouTube reported an error loading that video.';
   }
 
-  function createYouTubeSource(videoId, startAt){
+  function createYouTubeSource(videoId, startAt, endAt){
     var api = { kind:'youtube', onReady:null, onTick:null, onPlayState:null, onError:null };
     var yt = null, timer = null, dead = false, dur = 0, title = '';
     /* YT.seekTo() starts playback unless the player is already paused, which would
@@ -359,6 +359,7 @@
     }
 
     var vars = { playsinline:1, rel:0, modestbranding:1, start: Math.floor(startAt || 0) };
+    if (endAt) vars.end = Math.ceil(endAt);
     if (location.protocol === 'http:' || location.protocol === 'https:') vars.origin = location.origin;
 
     loadYouTubeApi().then(function(){
@@ -514,6 +515,7 @@
     playerHud.classList.remove('playing');
     rate = 1;
     rotation = 0;
+    clipIn = clipOut = null;
     noticeUntil = 0; /* a new source supersedes any notice about the previous one */
     setStatus(src.kind === 'youtube' ? 'Loading the YouTube player…' : '');
 
@@ -523,6 +525,7 @@
     p.onReady = function(){
       applyRotation();     /* sets --ar from the real dimensions, turned if needed */
       applyRate();
+      updateClipUi();
       var d = p.getDuration();
       if (d) seek.max = d;
       var t = p.getTitle();
@@ -566,8 +569,15 @@
       touchLibrary();
       refreshName();
       var e = entryFor(videoKey);
+      if (e && pendingClipName && !e.customName){
+        e.customName = pendingClipName;
+        saveLibrary();
+        refreshName();
+      }
+      pendingClipName = null;
       rotation = (e && typeof e.rotation === 'number') ? e.rotation : 0;
       applyRotation();
+      updateClipUi();
       /* set last: renderNotes() rewrites the status line */
       if (pendingNotice){ setNotice(pendingNotice); pendingNotice = ''; }
     });
@@ -607,6 +617,86 @@
       label: label || ('YouTube · ' + videoId),
       videoId: videoId,
       url: 'https://www.youtube.com/watch?v=' + videoId
+    });
+  }
+
+
+  /* ---------- clips: a YouTube session bounded to one segment ---------- */
+  /* Everything downstream — the overlay, note marks, auto-pause, play-to-next-note,
+     the seek bar — talks to the player through the facade. So a clip is just a facade
+     that reports clip-relative time: nothing else in the app needs to know.
+
+     Note times are therefore stored clip-relative too, which keeps every comparison
+     conversion-free. The source timestamp is not lost: the bounds live on the session,
+     so absolute = segment.start + note.time whenever it is wanted. */
+
+  function clipKey(videoId, start, end){
+    return 'vnotes:yt:' + videoId + '@' + start.toFixed(2) + '-' + end.toFixed(2);
+  }
+
+  function clipSource(inner, start, end){
+    var span = Math.max(0.1, end - start);
+    var api = { kind: 'youtube', segment: { start: start, end: end } };
+
+    /* pass-through, with time translated at the boundary */
+    api.play = function(){ inner.play(); };
+    api.pause = function(){ inner.pause(); };
+    api.isPaused = function(){ return inner.isPaused(); };
+    api.getTime = function(){
+      return Math.min(span, Math.max(0, inner.getTime() - start));
+    };
+    api.setTime = function(t){
+      inner.setTime(start + Math.min(span, Math.max(0, t)));
+    };
+    api.getDuration = function(){ return span; };
+    api.getAspect = function(){ return inner.getAspect(); };
+    api.getTitle = function(){ return inner.getTitle(); };
+    api.getRate = function(){ return inner.getRate(); };
+    api.setRate = function(r){ inner.setRate(r); };
+    api.getVolume = function(){ return inner.getVolume(); };
+    api.setVolume = function(v){ inner.setVolume(v); };
+    api.isMuted = function(){ return inner.isMuted(); };
+    api.setMuted = function(m){ inner.setMuted(m); };
+    api.canCaptureFrame = function(){ return inner.canCaptureFrame(); };
+    api.captureFrame = function(c, w, h, deg){ inner.captureFrame(c, w, h, deg); };
+    api.destroy = function(){ inner.destroy(); };
+
+    inner.onReady = function(){
+      /* land on the segment rather than the video's own beginning */
+      inner.setTime(start);
+      if (api.onReady) api.onReady();
+    };
+    /* YouTube's endSeconds is approximate, so stop on our own boundary too. Fire once
+       and re-arm only after the playhead comes back inside: an unlatched check keeps
+       re-triggering at the boundary and pins the clip at its end, undoing every seek. */
+    var stoppedAtEnd = false;
+    inner.onTick = function(t){
+      if (t < end - 0.15) stoppedAtEnd = false;
+      if (!stoppedAtEnd && t >= end - 0.05 && !inner.isPaused()){
+        stoppedAtEnd = true;
+        inner.pause();          /* pause only — seeking here would fight the user's own seeks */
+      }
+      if (api.onTick) api.onTick(Math.min(span, Math.max(0, t - start)));
+    };
+    inner.onPlayState = function(p){ if (api.onPlayState) api.onPlayState(p); };
+    inner.onError = function(m){ if (api.onError) api.onError(m); };
+
+    return api;
+  }
+
+  function loadYouTubeClip(videoId, start, end, label){
+    /* Held as the session's name rather than its auto label: otherwise YouTube's
+       title arrives on ready and overwrites it. It stays renameable like any other. */
+    pendingClipName = label || null;
+    openSource(function(){
+      return clipSource(createYouTubeSource(videoId, start, end), start, end);
+    }, {
+      kind: 'youtube',
+      key: clipKey(videoId, start, end),
+      label: label || ('Clip · ' + fmt(start) + '–' + fmt(end)),
+      videoId: videoId,
+      url: 'https://www.youtube.com/watch?v=' + videoId,
+      segment: { start: start, end: end }
     });
   }
 
@@ -703,6 +793,7 @@
     entry.fileName = source.fileName || null;
     entry.fileSize = source.fileSize || null;
     if (source.filePath) entry.filePath = source.filePath;
+    if (source.segment) entry.segment = source.segment;
     entry.noteCount = notes.length;
     entry.lastOpened = Date.now();
     library.unshift(entry);
@@ -719,7 +810,11 @@
 
   function openEntry(entry){
     if (entry.kind === 'youtube' && entry.videoId){
-      loadYouTubeVideo(entry.videoId, 0, entry.label);   /* customName applied by refreshName */
+      if (entry.segment){
+        loadYouTubeClip(entry.videoId, entry.segment.start, entry.segment.end, entry.label);
+      } else {
+        loadYouTubeVideo(entry.videoId, 0, entry.label);   /* customName applied by refreshName */
+      }
       return;
     }
     if (DESKTOP && entry.filePath){
@@ -1351,6 +1446,15 @@
     markStrip.innerHTML = '';
     var d = player ? player.getDuration() : 0;
     if (!d || !isFinite(d)) return;
+
+    [clipIn, clipOut].forEach(function(t, i){
+      if (t === null || t === undefined) return;
+      var e = document.createElement('div');
+      e.className = 'mark clip-edge';
+      e.style.left = ((t / d) * 100) + '%';
+      e.title = (i === 0 ? 'Clip starts ' : 'Clip ends ') + fmt(t);
+      markStrip.appendChild(e);
+    });
     notes.forEach(function(note){
       var m = document.createElement('div');
       m.className = 'mark';
@@ -1554,6 +1658,147 @@
   videoWrap.addEventListener('pointermove', function(){
     if (player && !player.isPaused()) hudIdleSoon(); else showHud();
   });
+
+
+  /* ---------- setting in/out and making a clip ---------- */
+  var clipIn = null, clipOut = null, pendingClipName = null;
+
+  function isClip(){ return !!(source && source.segment); }
+
+  function updateClipUi(){
+    var box = $('clip-control');
+    /* only offered on a full YouTube video: a clip of a clip is confusing, and a
+       local file cannot be shared because the recipient has no copy of it */
+    var can = !!player && source && source.kind === 'youtube' && !isClip();
+    box.classList.toggle('hidden', !can);
+    $('share-clip-btn').classList.toggle('hidden', !isClip());
+    if (!can) return;
+
+    var label = $('clip-range'), ready = clipIn !== null && clipOut !== null && clipOut > clipIn;
+    if (clipIn === null && clipOut === null) label.textContent = '—';
+    else label.textContent = (clipIn === null ? '?' : fmt(clipIn)) + ' – ' +
+                             (clipOut === null ? '?' : fmt(clipOut));
+    label.classList.toggle('partial', !ready);
+    $('clip-make-btn').disabled = !ready;
+    renderMarks();
+  }
+
+  $('clip-in-btn').addEventListener('click', function(){
+    if (!player) return;
+    clipIn = player.getTime();
+    if (clipOut !== null && clipOut <= clipIn) clipOut = null;
+    updateClipUi();
+  });
+  $('clip-out-btn').addEventListener('click', function(){
+    if (!player) return;
+    clipOut = player.getTime();
+    if (clipIn !== null && clipIn >= clipOut) clipIn = null;
+    updateClipUi();
+  });
+  $('clip-reset-btn').addEventListener('click', function(){
+    clipIn = clipOut = null;
+    updateClipUi();
+  });
+  $('clip-make-btn').addEventListener('click', function(){
+    if (!source || !source.videoId || clipIn === null || clipOut === null) return;
+    var start = clipIn, end = clipOut;
+    var name = (displayName() || 'Clip') + ' · ' + fmt(start) + '–' + fmt(end);
+    clipIn = clipOut = null;
+    loadYouTubeClip(source.videoId, start, end, name);
+    setNotice('Clip created — ' + fmt(end - start) + ' long. Its notes are kept separately.', 10000);
+  });
+
+  /* ---------- sharing a clip ---------- */
+  function clipPayload(){
+    var seg = source.segment;
+    return {
+      format: 'video-notes-clip', version: 1,
+      saved: new Date().toISOString(),
+      name: displayName(),
+      videoId: source.videoId,
+      url: source.url,
+      /* deep link straight to the segment, so the file is useful without the app */
+      sourceUrl: 'https://www.youtube.com/watch?v=' + source.videoId +
+                 '&t=' + Math.floor(seg.start),
+      segment: { start: seg.start, end: seg.end },
+      summary: summaryText.value || '',
+      notes: notes                       /* times are relative to segment.start */
+    };
+  }
+
+  $('share-clip-btn').addEventListener('click', function(){
+    if (!isClip()){ setNotice('Only a clip can be shared this way.'); return; }
+    if (!notes.length && !summaryText.value.trim()){
+      setNotice('Add a note or a summary before sharing this clip.');
+      return;
+    }
+    var p = clipPayload();
+    downloadBlob(new Blob([JSON.stringify(p, null, 2)], { type:'application/json' }),
+      safeName(p.name) + '-clip.json');
+    setNotice('Clip saved with ' + notes.length + ' note' + (notes.length === 1 ? '' : 's') + '.');
+  });
+
+  $('open-clip-btn').addEventListener('click', function(){ $('clip-input').click(); });
+  $('clip-input').addEventListener('change', function(e){
+    var f = e.target.files && e.target.files[0];
+    if (!f) return;
+    var reader = new FileReader();
+    reader.onload = function(){
+      var data;
+      try{ data = JSON.parse(reader.result); }
+      catch(err){ setNotice('That file could not be read.'); return; }
+      openSharedClip(data);
+    };
+    reader.readAsText(f);
+    e.target.value = '';
+  });
+
+  function openSharedClip(data){
+    if (!data || data.format !== 'video-notes-clip' || !data.videoId || !data.segment){
+      setNotice('That is not a shared clip file.');
+      return;
+    }
+    var start = +data.segment.start, end = +data.segment.end;
+    if (!isFinite(start) || !isFinite(end) || end <= start){
+      setNotice('That clip file has an unusable segment.');
+      return;
+    }
+    var key = clipKey(data.videoId, start, end);
+    var incoming = Array.isArray(data.notes) ? data.notes : [];
+
+    /* merge rather than replace, so opening a clip twice - or a newer copy of one
+       you have already annotated - cannot cost you your own notes */
+    store.get(key).then(function(existing){
+      var merged = Array.isArray(existing) ? existing.slice() : [];
+      var seen = {};
+      merged.forEach(function(n){ seen[n.id] = true; });
+      var added = 0;
+      incoming.forEach(function(n){
+        if (n && !seen[n.id]){ merged.push(n); seen[n.id] = true; added++; }
+      });
+      merged.sort(function(a, b){ return a.time - b.time; });
+      return store.set(key, merged).then(function(){
+        /* only fill an empty summary, never overwrite one already written */
+        if (typeof data.summary === 'string' && data.summary.trim()){
+          return store.get('vnotes:summary:' + key).then(function(cur){
+            var have = cur && typeof cur.text === 'string' ? cur.text.trim() : '';
+            if (!have) return store.set('vnotes:summary:' + key,
+              { text: data.summary, updated: Date.now() });
+          }).then(function(){ return added; });
+        }
+        return added;
+      });
+    }).then(function(added){
+      loadYouTubeClip(data.videoId, start, end, data.name || null);
+      setNotice(added
+        ? 'Opened shared clip — ' + added + ' note' + (added === 1 ? '' : 's') + ' added.'
+        : 'Opened shared clip — you already had every note in it.', 12000);
+    }).catch(function(err){
+      /* without this a storage failure is completely silent: nothing opens and
+         nothing is said, which is indistinguishable from the click not registering */
+      setNotice('Could not open that clip: ' + (err && err.message ? err.message : err), 20000);
+    });
+  }
 
   /* ---------- sound ---------- */
   /* Both sources speak 0..1 through the facade; YouTube's 0..100 is its own problem. */
