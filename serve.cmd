@@ -43,7 +43,7 @@ echo   static server, for example:
 echo.
 echo       python -m http.server 8000
 echo.
-echo   ...then open http://localhost:8000/video-notes.html
+echo   ...then open http://localhost:8000/app.html
 echo.
 pause
 goto done

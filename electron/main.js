@@ -35,7 +35,7 @@ function createWindow(){
     }
   });
   win.removeMenu();
-  win.loadURL('http://127.0.0.1:' + port + '/video-notes.html');
+  win.loadURL('http://127.0.0.1:' + port + '/app.html');
   win.on('closed', () => { win = null; });
 }
 

@@ -81,14 +81,14 @@ few minutes.
 ### The browser version
 
 The same app runs as a plain web page, but it must be served over `http://` — YouTube
-refuses to embed into a `file://` page, and opening `video-notes.html` directly gives
+refuses to embed into a `file://` page, and opening `app.html` directly gives
 "error 153". Any static server works:
 
 ```bash
 python -m http.server 8000
 ```
 
-Then open <http://localhost:8000/video-notes.html>. Local video files work either way; only
+Then open <http://localhost:8000/app.html>. Local video files work either way; only
 YouTube needs the server. In the browser you also have to re-pick a local video each session
 — remembering the file's path is the main thing the desktop app adds.
 
@@ -135,7 +135,7 @@ npx electron electron/smoke.js    # launches the real window and checks it
 npm run icon                      # regenerates build/icon.ico from build/make-icon.js
 ```
 
-The app itself is three files — `video-notes.html`, `styles.css`, `app.js` — with no build
+The app itself is three files — `app.html`, `styles.css`, `app.js` — with no build
 step and no framework. `electron/` adds the desktop shell: a loopback server (which is what
 lets YouTube embed and lets local video stream with seeking), a file-backed store, and a
 preload bridge. Adding `?test=1` to the URL routes all storage to a throwaway database, so

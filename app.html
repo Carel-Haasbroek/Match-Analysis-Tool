@@ -1,0 +1,269 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Video Notes</title>
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+<div class="app">
+  <header class="topbar">
+    <h1>Video Notes</h1>
+    <div class="sep"></div>
+    <button type="button" id="load-btn">Load video</button>
+    <input type="file" id="file-input" accept="video/*">
+    <form class="url-field" id="top-url-form">
+      <input type="text" id="top-url-input" placeholder="Paste a YouTube link" spellcheck="false" aria-label="YouTube link">
+      <button type="submit">Open</button>
+    </form>
+    <button type="button" id="recent-btn">Home</button>
+    <label class="switch" title="Pause playback automatically whenever a note's moment is reached">
+      <input type="checkbox" id="auto-pause">
+      <span class="switch-track" aria-hidden="true"><span class="switch-knob"></span></span>
+      <span class="switch-label">Pause at notes</span>
+    </label>
+    <button type="button" id="view-summary-btn">View summary</button>
+    <span class="file-name mono" id="file-name"></span>
+    <span class="status" id="status"></span>
+  </header>
+
+
+  <main class="home" id="home">
+    <div class="home-inner">
+      <section class="home-open">
+        <h3>Open a match</h3>
+        <form class="url-field big" id="start-url-form">
+          <input type="text" id="url-input" placeholder="https://www.youtube.com/watch?v=&hellip;" spellcheck="false" aria-label="YouTube link">
+          <button type="submit" class="primary">Open link</button>
+        </form>
+        <div class="or">or</div>
+        <button type="button" id="empty-load-btn">Choose a video file</button>
+        <p class="home-hint">Your notes stay on this device &mdash; nothing is uploaded.</p>
+
+        <div class="file-note hidden" id="file-note">
+          <strong>YouTube links need a local server.</strong>
+          This page is open straight from a file, and YouTube refuses to embed into a
+          <code>file://</code> page (it answers with &ldquo;error 153&rdquo;). Double-click
+          <code>serve.cmd</code> in this folder to open the desktop app instead, which has no
+          such restriction. To stay in a browser, serve this folder over <code>http://</code>
+          with any static server. Local video files work fine either way.
+        </div>
+
+        <div class="backup-block">
+          <h3>All notes</h3>
+          <div class="backup-row">
+            <button type="button" id="backup-btn">Export all notes</button>
+            <button type="button" id="restore-btn">Import backup</button>
+            <input type="file" id="restore-input" accept="application/json">
+          </div>
+          <p class="backup-hint">One file holding every note, every summary and every session name.
+            Importing only ever adds notes back &mdash; it never overwrites or deletes.</p>
+        </div>
+      </section>
+
+      <section class="home-sessions">
+        <header class="home-sessions-head">
+          <h3>Sessions</h3>
+          <input type="search" id="session-filter" placeholder="Filter sessions" aria-label="Filter sessions">
+          <span class="grow"></span>
+          <button type="button" class="hidden" id="start-close">Back to the video</button>
+        </header>
+        <div class="recent-list" id="recent-list"></div>
+      </section>
+    </div>
+  </main>
+
+  <div class="workspace">
+    <section class="stage">
+      <div class="stage-video">
+      <div class="video-wrap" id="video-wrap">
+        <div class="rotor" id="rotor">
+          <video id="video" playsinline preload="metadata"></video>
+          <div id="yt-holder"></div>
+          <canvas id="draw-canvas"></canvas>
+        </div>
+
+        <div class="player-hud" id="player-hud">
+          <button type="button" class="hud-btn" id="play-btn" disabled title="Play / pause (space)">
+            <svg class="i-play" viewBox="0 0 16 16" aria-hidden="true"><path d="M4 2.5v11l9-5.5z"/></svg>
+            <svg class="i-pause" viewBox="0 0 16 16" aria-hidden="true"><path d="M4 2.5h3v11H4zM9 2.5h3v11H9z"/></svg>
+            <span class="sr">Play</span>
+          </button>
+          <button type="button" class="hud-btn" id="back-btn" disabled title="Back 5 seconds (left arrow)">
+            <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M8 3V1L4 4l4 3V5a4 4 0 1 1-4 4H2.4A5.6 5.6 0 1 0 8 3z"/></svg>
+            <span class="sr">Back 5 seconds</span>
+          </button>
+          <button type="button" class="hud-btn" id="fwd-btn" disabled title="Forward 5 seconds (right arrow)">
+            <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M8 3V1l4 3-4 3V5a4 4 0 1 0 4 4h1.6A5.6 5.6 0 1 1 8 3z"/></svg>
+            <span class="sr">Forward 5 seconds</span>
+          </button>
+          <button type="button" class="hud-btn" id="next-note-btn" disabled title="Play until the next note (N)">
+            <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M3 2.5v11l8-5.5z"/><path d="M12 2.5h2v11h-2z"/></svg>
+            <span class="sr">Play until the next note</span>
+          </button>
+          <span class="hud-time mono" id="time-display">0:00 / 0:00</span>
+
+          <button type="button" class="hud-btn hud-rate" id="rate-btn" disabled
+                  title="Playback speed - click to cycle">1&times;</button>
+          <button type="button" class="hud-btn" id="rotate-btn" disabled
+                  title="Rotate the video (R)">
+            <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M13.5 8a5.5 5.5 0 1 1-1.9-4.2M13.5 1.5v3h-3"/></svg>
+            <span class="sr">Rotate the video</span>
+          </button>
+
+          <span class="hud-sound" id="hud-sound">
+            <button type="button" class="hud-btn" id="mute-btn" disabled title="Mute / unmute (M)">
+              <svg class="i-loud" viewBox="0 0 16 16" aria-hidden="true"><path d="M7 2.5 3.8 5.2H1.5v5.6h2.3L7 13.5zM9.6 5.2a3.6 3.6 0 0 1 0 5.6M11.6 3.1a6.4 6.4 0 0 1 0 9.8"/></svg>
+              <svg class="i-muted" viewBox="0 0 16 16" aria-hidden="true"><path d="M7 2.5 3.8 5.2H1.5v5.6h2.3L7 13.5zM10.2 6.2l3.6 3.6M13.8 6.2l-3.6 3.6"/></svg>
+              <span class="sr">Mute</span>
+            </button>
+            <input type="range" id="volume" min="0" max="1" step="0.01" value="1"
+                   disabled aria-label="Volume" title="Volume">
+          </span>
+        </div>
+
+        <div class="note-view hidden" id="note-view">
+          <button type="button" class="note-view-toggle" id="note-view-toggle"
+                  aria-expanded="true" title="Hide the note">
+            <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M2.8 10.6 8 5.4l5.2 5.2"/></svg>
+            <span class="sr">Hide the note</span>
+          </button>
+          <div class="note-view-body" id="note-view-body">
+            <div class="note-view-time mono" id="note-view-time"></div>
+            <div class="note-view-text" id="note-view-text"></div>
+          </div>
+        </div>
+
+      </div>
+      </div>
+
+      <div class="timeline">
+        <input type="range" id="seek" min="0" max="100" value="0" step="0.01" disabled aria-label="Seek">
+        <div class="mark-strip" id="mark-strip"></div>
+      </div>
+
+      <div class="controls-bar">
+        <span class="grow"></span>
+        <label class="hold-control" title="How long a drawing stays on screen once playback reaches it">
+          <span class="label">Hold</span>
+          <input type="range" id="hold-range" min="0.01" max="2" step="0.01" value="1" aria-label="Drawing hold time">
+          <span class="hold-value mono" id="hold-value">1.00s</span>
+        </label>
+        <button id="mark-btn" class="primary" disabled>Mark this moment</button>
+      </div>
+
+      <div class="draw-toolbar" id="draw-toolbar">
+        <div class="draw-row">
+          <span class="label">Tool</span>
+          <button type="button" class="tool-btn selected" data-tool="pen">Pen</button>
+          <button type="button" class="tool-btn" data-tool="arrow">Arrow</button>
+          <button type="button" class="tool-btn" data-tool="rect">Box</button>
+          <span class="label" style="margin-left:10px;">Color</span>
+          <span class="swatch-grid">
+            <button type="button" class="swatch selected" data-color="#ff2d78" style="background:#ff2d78" aria-label="Pink"></button>
+            <button type="button" class="swatch" data-color="#ff4d4d" style="background:#ff4d4d" aria-label="Red"></button>
+            <button type="button" class="swatch" data-color="#ff8c1a" style="background:#ff8c1a" aria-label="Orange"></button>
+            <button type="button" class="swatch" data-color="#ffb020" style="background:#ffb020" aria-label="Amber"></button>
+            <button type="button" class="swatch" data-color="#ffe83d" style="background:#ffe83d" aria-label="Yellow"></button>
+            <button type="button" class="swatch" data-color="#b6f542" style="background:#b6f542" aria-label="Lime"></button>
+            <button type="button" class="swatch" data-color="#3dff9e" style="background:#3dff9e" aria-label="Green"></button>
+            <button type="button" class="swatch" data-color="#35c9ff" style="background:#35c9ff" aria-label="Cyan"></button>
+            <button type="button" class="swatch" data-color="#4a7bff" style="background:#4a7bff" aria-label="Blue"></button>
+            <button type="button" class="swatch" data-color="#a86bff" style="background:#a86bff" aria-label="Violet"></button>
+            <button type="button" class="swatch" data-color="#ffffff" style="background:#ffffff" aria-label="White"></button>
+            <button type="button" class="swatch" data-color="#121212" style="background:#121212" aria-label="Black"></button>
+          </span>
+          <label class="swatch-custom" title="Any other colour">
+            <input type="color" id="custom-color" value="#ff2d78" aria-label="Custom colour">
+          </label>
+          <span class="label" style="margin-left:10px;">Brush</span>
+          <button type="button" class="size-btn selected" data-size="3" aria-label="Thin"><span class="dot" style="width:5px;height:5px"></span></button>
+          <button type="button" class="size-btn" data-size="6" aria-label="Medium"><span class="dot" style="width:9px;height:9px"></span></button>
+          <button type="button" class="size-btn" data-size="11" aria-label="Thick"><span class="dot" style="width:14px;height:14px"></span></button>
+          <span class="grow"></span>
+          <button type="button" id="undo-btn">Undo</button>
+          <button type="button" id="clear-btn">Clear drawing</button>
+        </div>
+        <textarea id="note-text" placeholder="Add a note for this moment (optional)"></textarea>
+        <div class="draw-actions">
+          <span class="draw-hint" id="draw-hint"></span>
+          <button type="button" id="cancel-btn">Cancel</button>
+          <button type="button" id="save-btn" class="primary">Save note</button>
+        </div>
+      </div>
+    </section>
+
+    <aside class="notes-panel">
+      <header>
+        <div class="panel-tabs" role="tablist">
+          <button type="button" class="panel-tab selected" data-pane="notes" role="tab" aria-selected="true">
+            <span id="notes-heading">Notes</span>
+          </button>
+          <button type="button" class="panel-tab" data-pane="summary" role="tab" aria-selected="false">Summary</button>
+        </div>
+        <span class="grow"></span>
+        <button type="button" id="export-btn">Export</button>
+        <button type="button" id="import-btn">Import</button>
+        <input type="file" id="import-input" accept="application/json">
+      </header>
+
+      <div class="pane" id="pane-notes">
+        <div class="notes-list" id="notes-list"></div>
+      </div>
+
+      <div class="pane hidden" id="pane-summary">
+        <section class="summary-section">
+          <h3>Notes</h3>
+          <div class="summary-notes" id="summary-notes"></div>
+        </section>
+        <section class="summary-section summary-input">
+          <h3>Summary</h3>
+          <textarea id="summary-text" placeholder="Your thoughts on this match — patterns, what worked, what to fix…"></textarea>
+          <div class="summary-status" id="summary-status"></div>
+        </section>
+      </div>
+    </aside>
+  </div>
+</div>
+
+<div class="lightbox" id="lightbox">
+  <div class="lightbox-panel">
+    <img id="lightbox-img" alt="Note drawing">
+    <div class="note-time mono" id="lightbox-time" style="margin-top:12px"></div>
+    <div class="lightbox-text" id="lightbox-text"></div>
+    <div class="lightbox-actions">
+      <button type="button" id="lightbox-delete" class="danger">Delete</button>
+      <button type="button" id="lightbox-download">Download image</button>
+      <button type="button" id="lightbox-jump" class="primary">Jump to this moment</button>
+      <button type="button" id="lightbox-close">Close</button>
+    </div>
+  </div>
+</div>
+
+<div class="lightbox" id="summary-modal">
+  <div class="summary-modal-panel">
+    <header class="summary-modal-head">
+      <h2 id="summary-modal-title">Summary</h2>
+      <span class="summary-modal-sub" id="summary-modal-sub"></span>
+      <span class="grow"></span>
+      <button type="button" id="summary-modal-close">Close</button>
+    </header>
+    <div class="summary-modal-body">
+      <section class="summary-modal-notes">
+        <h3>Notes</h3>
+        <div class="summary-modal-list" id="summary-modal-list"></div>
+      </section>
+      <section class="summary-modal-write">
+        <h3>Summary</h3>
+        <textarea id="summary-modal-text"
+                  placeholder="Your thoughts on this match — patterns, what worked, what to fix…"></textarea>
+        <div class="summary-status" id="summary-modal-status"></div>
+      </section>
+    </div>
+  </div>
+</div>
+
+<script src="app.js"></script>
+</body>
+</html>

@@ -30,7 +30,7 @@ app.whenReady().then(() => {
 
     try {
       const url = win.webContents.getURL();
-      check('window loaded over http://127.0.0.1', /^http:\/\/127\.0\.0\.1:\d+\/video-notes\.html$/.test(url), url);
+      check('window loaded over http://127.0.0.1', /^http:\/\/127\.0\.0\.1:\d+\/app\.html$/.test(url), url);
 
       const probe = await win.webContents.executeJavaScript(`(function(){
         return {

@@ -41,10 +41,10 @@ function createServer(opts){
   /* An explicit list, not "anything under the app folder": the folder also holds
      package.json and the main-process sources, and none of those belong on a socket.
      URL normalisation already collapses "..", so this is the real guard. */
-  const SERVE = new Set(['video-notes.html', 'styles.css', 'app.js']);
+  const SERVE = new Set(['app.html', 'styles.css', 'app.js']);
 
   function serveStatic(req, res, pathname){
-    const rel = (!pathname || pathname === '/') ? 'video-notes.html' : pathname.replace(/^\/+/, '');
+    const rel = (!pathname || pathname === '/') ? 'app.html' : pathname.replace(/^\/+/, '');
     if (!SERVE.has(rel)){ res.writeHead(404).end('not found'); return; }
     const file = path.join(root, rel);
     fs.readFile(file, (err, buf) => {
