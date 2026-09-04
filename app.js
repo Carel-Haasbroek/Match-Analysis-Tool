@@ -16,6 +16,8 @@
   var notesList = $('notes-list'), notesHeading = $('notes-heading');
   var summaryText = $('summary-text');
   var holdRange = $('hold-range'), holdValue = $('hold-value');
+  var playerHud = $('player-hud'), nextNoteBtn = $('next-note-btn'), autoPauseBox = $('auto-pause');
+  var noteView = $('note-view'), noteViewTime = $('note-view-time'), noteViewText = $('note-view-text');
   var lightbox = $('lightbox'), lightboxImg = $('lightbox-img'), lightboxTime = $('lightbox-time'),
       lightboxText = $('lightbox-text');
 
@@ -25,6 +27,8 @@
   var tool = 'pen', color = '#ff2d78', size = 3, capturedTime = 0, lightboxNote = null;
   var hasFrame = false, reviewNote = null, overlayKey = null;
   var overlayTimer = null, overlayEndsAt = 0, overlayRemaining = 0, lastSyncTime = 0;
+  var autoPause = false, playTarget = null, panelNoteId = null, notePanelOpen = true;
+  var hudIdleTimer = null;
   var activePane = 'notes';
 
   var LIB_KEY = 'vnotes:index', LIB_MAX = 40;
@@ -136,6 +140,30 @@
       ? notes.length + ' note' + (notes.length === 1 ? '' : 's') + ' · ' + store.label
       : '');
   }
+  /* A session's name: whatever the user typed, else the auto-derived filename or
+     YouTube title. The storage key never changes, so renaming can't detach notes. */
+  function entryFor(key){
+    for (var i = 0; i < library.length; i++){
+      if (library[i].key === key) return library[i];
+    }
+    return null;
+  }
+  function autoName(entry){
+    return entry.label || entry.fileName || entry.videoId || 'Untitled';
+  }
+  function entryName(entry){
+    return (entry.customName && entry.customName.trim()) || autoName(entry);
+  }
+  function displayName(){
+    var e = videoKey ? entryFor(videoKey) : null;
+    return (e && e.customName && e.customName.trim()) || currentLabel || '';
+  }
+  function refreshName(){
+    var n = displayName();
+    fileNameEl.textContent = n;
+    fileNameEl.title = (source && source.url) ? source.url + ' — ' + n : n;
+  }
+
   function relTime(ts){
     if (!ts) return '';
     var d = Date.now() - ts;
@@ -393,6 +421,9 @@
     if (player){ player.destroy(); player = null; }
     exitDraw();
     imgCache = {};
+    playTarget = null;
+    panelNoteId = null;
+    noteView.classList.add('hidden');
     clearHideTimer();
     overlayRemaining = 0;
     lastSyncTime = 0;
@@ -406,11 +437,11 @@
     fileNameEl.title = src.url || src.label;
     hideStart();
 
-    [playBtn, backBtn, fwdBtn, markBtn, seek].forEach(function(el){ el.disabled = false; });
+    [playBtn, backBtn, fwdBtn, nextNoteBtn, markBtn, seek].forEach(function(el){ el.disabled = false; });
     videoWrap.style.aspectRatio = '16 / 9';
     seek.value = 0;
     seek.max = 100;
-    playBtn.textContent = 'Play';
+    playerHud.classList.remove('playing');
     noticeUntil = 0; /* a new source supersedes any notice about the previous one */
     setStatus(src.kind === 'youtube' ? 'Loading the YouTube player…' : '');
 
@@ -423,9 +454,10 @@
       if (d) seek.max = d;
       var t = p.getTitle();
       if (t && t !== source.label){
+        /* Refresh the auto-derived name only; a name the user typed still wins. */
         source.label = currentLabel = t;
-        fileNameEl.textContent = t;
         touchLibrary();
+        refreshName();
       }
       updateTime();
       renderMarks();
@@ -440,12 +472,16 @@
       }
       if (document.activeElement !== seek) seek.value = t;
       updateTime();
+
+      var prev = lastSyncTime;      /* read before syncOverlay advances it */
       syncOverlay(t);
+      considerStop(prev, t);
     };
 
     p.onPlayState = function(playing){
-      playBtn.textContent = playing ? 'Pause' : 'Play';
-      if (playing) thawHide(); else freezeHide();
+      playerHud.classList.toggle('playing', playing);
+      if (playing){ thawHide(); hudIdleSoon(); }
+      else { freezeHide(); showHud(); }
     };
 
     p.onError = function(msg){ setNotice(msg, 60000); };
@@ -455,6 +491,7 @@
       renderNotes();
       renderMarks();
       touchLibrary();
+      refreshName();
       /* set last: renderNotes() rewrites the status line */
       if (pendingNotice){ setNotice(pendingNotice); pendingNotice = ''; }
     });
@@ -577,10 +614,10 @@
 
   function openEntry(entry){
     if (entry.kind === 'youtube' && entry.videoId){
-      loadYouTubeVideo(entry.videoId, 0, entry.label);
+      loadYouTubeVideo(entry.videoId, 0, entry.label);   /* customName applied by refreshName */
     } else {
       pendingKey = entry.key;
-      setNotice('Choose "' + (entry.fileName || entry.label) + '" again to reopen its notes.');
+      setNotice('Choose "' + (entry.fileName || autoName(entry)) + '" again to reopen its notes.');
       fileInput.click();
     }
   }
@@ -607,15 +644,58 @@
       main.className = 'recent-main';
       var label = document.createElement('div');
       label.className = 'recent-label';
-      label.textContent = entry.label || entry.fileName || entry.videoId;
+      label.textContent = entryName(entry);
       var meta = document.createElement('div');
       meta.className = 'recent-meta';
       var bits = [(entry.noteCount || 0) + ' note' + (entry.noteCount === 1 ? '' : 's')];
       if (entry.lastOpened) bits.push(relTime(entry.lastOpened));
+      /* once renamed, still say which video it is */
+      if (entry.customName && entry.customName.trim()) bits.push(autoName(entry));
       if (entry.kind === 'file') bits.push('pick the file again');
       meta.textContent = bits.join(' · ');
       main.appendChild(label);
       main.appendChild(meta);
+
+      function beginRename(){
+        if (main.querySelector('.recent-rename')) return;
+        var input = document.createElement('input');
+        input.type = 'text';
+        input.className = 'recent-rename';
+        input.value = entryName(entry);
+        input.setAttribute('aria-label', 'Session name');
+        main.replaceChild(input, label);
+        input.focus();
+        input.select();
+
+        var settled = false;
+        function commit(save){
+          if (settled) return;
+          settled = true;
+          if (save){
+            var v = input.value.trim();
+            /* clearing the box hands the name back to the file or video title */
+            if (v && v !== autoName(entry)) entry.customName = v;
+            else delete entry.customName;
+            saveLibrary();
+            if (videoKey === entry.key) refreshName();
+          }
+          renderRecent();
+        }
+        input.addEventListener('click', function(e){ e.stopPropagation(); });
+        input.addEventListener('keydown', function(e){
+          e.stopPropagation();
+          if (e.key === 'Enter'){ e.preventDefault(); commit(true); }
+          if (e.key === 'Escape'){ e.preventDefault(); commit(false); }
+        });
+        input.addEventListener('blur', function(){ commit(true); });
+      }
+
+      var rename = document.createElement('button');
+      rename.type = 'button';
+      rename.className = 'recent-edit';
+      rename.textContent = '✎';
+      rename.title = 'Rename this session';
+      rename.addEventListener('click', function(e){ e.stopPropagation(); beginRename(); });
 
       var forget = document.createElement('button');
       forget.type = 'button';
@@ -626,8 +706,12 @@
 
       row.appendChild(kind);
       row.appendChild(main);
+      row.appendChild(rename);
       row.appendChild(forget);
-      row.addEventListener('click', function(){ openEntry(entry); });
+      row.addEventListener('click', function(){
+        if (main.querySelector('.recent-rename')) return;   /* mid-edit */
+        openEntry(entry);
+      });
       recentList.appendChild(row);
     });
   }
@@ -665,6 +749,7 @@
     if (e.code === 'Space'){ e.preventDefault(); playBtn.click(); }
     if (e.key === 'ArrowLeft') backBtn.click();
     if (e.key === 'ArrowRight') fwdBtn.click();
+    if (e.key === 'n' || e.key === 'N') playToNextNote();
   });
 
   /* ---------- draw mode ---------- */
@@ -694,6 +779,8 @@
       ? ''
       : 'Drawing over the live player — saved as a replayable overlay.';
 
+    playerHud.classList.add('hidden');
+    noteView.classList.add('hidden');
     shapes = [];
     redraw();
     canvas.classList.remove('review');
@@ -705,7 +792,11 @@
 
   function exitDraw(){
     drawToolbar.classList.remove('active');
+    playerHud.classList.remove('hidden');
+    showHud();
     drawing = false;
+    panelNoteId = null;
+    syncNotePanel(player ? player.getTime() : 0);
     shapes = [];
     activeShape = null;
     if (!reviewNote){
@@ -805,18 +896,36 @@
     });
   }
   /* ---------- how long a drawing stays on screen ---------- */
+  function savePrefs(){
+    store.set(PREFS_KEY, {
+      overlayHold: overlayHold,
+      autoPause: autoPause,
+      notePanelOpen: notePanelOpen
+    });
+  }
+
   function applyHold(v, save){
     overlayHold = Math.min(HOLD_MAX, Math.max(HOLD_MIN, parseFloat(v) || HOLD_MIN));
     holdRange.value = overlayHold;
     holdValue.textContent = overlayHold.toFixed(2) + 's';
-    if (save) store.set(PREFS_KEY, { overlayHold: overlayHold });
+    if (save) savePrefs();
   }
   holdRange.addEventListener('input', function(){ applyHold(this.value, false); });
   holdRange.addEventListener('change', function(){ applyHold(this.value, true); });
 
+  autoPauseBox.addEventListener('change', function(){
+    autoPause = this.checked;
+    if (!autoPause) playTarget = null;
+    savePrefs();
+  });
+
   function loadPrefs(){
     return store.get(PREFS_KEY).then(function(p){
-      applyHold(p && typeof p.overlayHold === 'number' ? p.overlayHold : overlayHold, false);
+      p = p || {};
+      applyHold(typeof p.overlayHold === 'number' ? p.overlayHold : overlayHold, false);
+      autoPause = !!p.autoPause;
+      autoPauseBox.checked = autoPause;
+      applyNotePanelOpen(p.notePanelOpen !== false, false);
     });
   }
 
@@ -971,6 +1080,7 @@
   function syncOverlay(time, isSeek){
     var prev = lastSyncTime;
     lastSyncTime = time;
+    syncNotePanel(time);
     if (drawing) return;            /* draw mode owns the canvas */
 
     var live = triggeredNotes(time, prev, isSeek);
@@ -1086,6 +1196,8 @@
     });
     if (gone) trash(gone);
     overlayKey = null;
+    panelNoteId = null;
+    syncNotePanel(player ? player.getTime() : 0);
     persist(); renderNotes(); renderMarks();
     if (lightboxNote && lightboxNote.id === id) closeLightbox();
   }
@@ -1115,7 +1227,7 @@
   $('export-btn').addEventListener('click', function(){
     if (!notes.length){ setNotice('Nothing to export yet.'); return; }
     var payload = {
-      video: currentLabel,
+      video: displayName(),
       summary: summaryText.value || '',
       source: source ? {
         kind: source.kind,
@@ -1127,7 +1239,7 @@
       notes: notes
     };
     downloadBlob(new Blob([JSON.stringify(payload, null, 2)], { type:'application/json' }),
-      safeName(currentLabel) + '-notes.json');
+      safeName(displayName()) + '-notes.json');
   });
 
   $('import-btn').addEventListener('click', function(){ $('import-input').click(); });
@@ -1154,6 +1266,108 @@
     };
     reader.readAsText(f);
     e.target.value = '';
+  });
+
+  /* ---------- stopping on notes ---------- */
+  /* Auto-pause and "play to next note" share one stop path. Detection lands up to a
+     tick late, so we snap back to the note's exact timestamp — that is the frame the
+     drawing was made on, and the only place it lines up with what is underneath. */
+
+  function firstCrossed(prev, t){
+    var hit = null;
+    notes.forEach(function(n){
+      if (prev < n.time && n.time <= t && (hit === null || n.time < hit)) hit = n.time;
+    });
+    return hit;
+  }
+
+  function considerStop(prev, t){
+    if (!player || drawing) return;
+    var target = null;
+    if (autoPause) target = firstCrossed(prev, t);
+    if (playTarget !== null && t >= playTarget){
+      target = (target === null) ? playTarget : Math.min(target, playTarget);
+    }
+    if (target === null) return;
+
+    playTarget = null;
+    player.pause();
+    player.setTime(target);
+    /* Load-bearing: without this the next tick sees the same note as freshly
+       crossed and pauses again, forever. */
+    lastSyncTime = target;
+    seek.value = target;
+    updateTime();
+    syncOverlay(target, true);
+  }
+
+  nextNoteBtn.addEventListener('click', playToNextNote);
+  function playToNextNote(){
+    if (!player || nextNoteBtn.disabled) return;
+    var now = player.getTime(), next = null;
+    notes.forEach(function(n){
+      if (n.time > now + 0.05 && (next === null || n.time < next)) next = n.time;
+    });
+    if (next === null){ setNotice('No notes after this point.'); return; }
+    playTarget = next;
+    player.play();
+  }
+
+  /* ---------- the note shown over the video ---------- */
+  function noteAt(time){
+    var hit = null;
+    notes.forEach(function(n){
+      if (n.time <= time + 0.05 && (hit === null || n.time > hit.time)) hit = n;
+    });
+    return hit;
+  }
+
+  function syncNotePanel(time){
+    if (drawing){ noteView.classList.add('hidden'); return; }
+    var n = noteAt(time);
+    if (!n){
+      noteView.classList.add('hidden');
+      panelNoteId = null;
+      return;
+    }
+    noteView.classList.remove('hidden');
+    if (n.id === panelNoteId) return;   /* same note — leave it alone */
+    panelNoteId = n.id;
+    /* Reaching a note reveals it, even if the panel was collapsed. Collapsing
+       therefore dismisses the current note rather than muting the panel for good.
+       Not saved to prefs — only an explicit chevron click records a preference. */
+    if (!notePanelOpen) applyNotePanelOpen(true, false);
+    noteViewTime.textContent = fmt(n.time);
+    noteViewText.textContent = n.text || 'Drawing only';
+    noteViewText.classList.toggle('muted', !n.text);
+  }
+
+  function applyNotePanelOpen(open, save){
+    notePanelOpen = !!open;
+    noteView.classList.toggle('collapsed', !notePanelOpen);
+    var btn = $('note-view-toggle');
+    btn.setAttribute('aria-expanded', notePanelOpen ? 'true' : 'false');
+    btn.title = notePanelOpen ? 'Hide the note' : 'Show the note';
+    if (save) savePrefs();
+  }
+  $('note-view-toggle').addEventListener('click', function(){
+    applyNotePanelOpen(!notePanelOpen, true);
+  });
+
+  /* ---------- HUD idle fade ---------- */
+  function showHud(){
+    playerHud.classList.remove('idle');
+    if (hudIdleTimer){ clearTimeout(hudIdleTimer); hudIdleTimer = null; }
+  }
+  function hudIdleSoon(){
+    showHud();
+    hudIdleTimer = setTimeout(function(){
+      hudIdleTimer = null;
+      if (player && !player.isPaused() && !drawing) playerHud.classList.add('idle');
+    }, 2000);
+  }
+  videoWrap.addEventListener('pointermove', function(){
+    if (player && !player.isPaused()) hudIdleSoon(); else showHud();
   });
 
   /* ---------- notes / summary tabs ---------- */

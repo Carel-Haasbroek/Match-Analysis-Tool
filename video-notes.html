@@ -18,6 +18,11 @@
       <button type="submit">Open</button>
     </form>
     <button type="button" id="recent-btn">Recent</button>
+    <label class="switch" title="Pause playback automatically whenever a note's moment is reached">
+      <input type="checkbox" id="auto-pause">
+      <span class="switch-track" aria-hidden="true"><span class="switch-knob"></span></span>
+      <span class="switch-label">Pause at notes</span>
+    </label>
     <span class="file-name mono" id="file-name"></span>
     <span class="status" id="status"></span>
   </header>
@@ -28,6 +33,39 @@
         <video id="video" playsinline preload="metadata"></video>
         <div id="yt-holder"></div>
         <canvas id="draw-canvas"></canvas>
+
+        <div class="player-hud" id="player-hud">
+          <button type="button" class="hud-btn" id="play-btn" disabled title="Play / pause (space)">
+            <svg class="i-play" viewBox="0 0 16 16" aria-hidden="true"><path d="M4 2.5v11l9-5.5z"/></svg>
+            <svg class="i-pause" viewBox="0 0 16 16" aria-hidden="true"><path d="M4 2.5h3v11H4zM9 2.5h3v11H9z"/></svg>
+            <span class="sr">Play</span>
+          </button>
+          <button type="button" class="hud-btn" id="back-btn" disabled title="Back 5 seconds (left arrow)">
+            <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M8 3V1L4 4l4 3V5a4 4 0 1 1-4 4H2.4A5.6 5.6 0 1 0 8 3z"/></svg>
+            <span class="sr">Back 5 seconds</span>
+          </button>
+          <button type="button" class="hud-btn" id="fwd-btn" disabled title="Forward 5 seconds (right arrow)">
+            <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M8 3V1l4 3-4 3V5a4 4 0 1 0 4 4h1.6A5.6 5.6 0 1 1 8 3z"/></svg>
+            <span class="sr">Forward 5 seconds</span>
+          </button>
+          <button type="button" class="hud-btn" id="next-note-btn" disabled title="Play until the next note (N)">
+            <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M3 2.5v11l8-5.5z"/><path d="M12 2.5h2v11h-2z"/></svg>
+            <span class="sr">Play until the next note</span>
+          </button>
+          <span class="hud-time mono" id="time-display">0:00 / 0:00</span>
+        </div>
+
+        <div class="note-view hidden" id="note-view">
+          <button type="button" class="note-view-toggle" id="note-view-toggle"
+                  aria-expanded="true" title="Hide the note">
+            <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M2.8 10.6 8 5.4l5.2 5.2"/></svg>
+            <span class="sr">Hide the note</span>
+          </button>
+          <div class="note-view-body" id="note-view-body">
+            <div class="note-view-time mono" id="note-view-time"></div>
+            <div class="note-view-text" id="note-view-text"></div>
+          </div>
+        </div>
 
         <div class="start-screen" id="start-screen">
           <button type="button" class="start-close hidden" id="start-close" title="Back to the video" aria-label="Close">&#10005;</button>
@@ -75,10 +113,6 @@
       </div>
 
       <div class="controls-bar">
-        <button id="play-btn" disabled>Play</button>
-        <button id="back-btn" disabled title="Back 5s">&minus;5s</button>
-        <button id="fwd-btn" disabled title="Forward 5s">+5s</button>
-        <span class="time-display mono" id="time-display">0:00 / 0:00</span>
         <span class="grow"></span>
         <label class="hold-control" title="How long a drawing stays on screen once playback reaches it">
           <span class="label">Hold</span>

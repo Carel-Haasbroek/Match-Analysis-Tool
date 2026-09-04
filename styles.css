@@ -77,6 +77,78 @@ input[type=file]{ display:none; }
   touch-action:none; cursor:crosshair; }
 .video-wrap canvas.review{ pointer-events:none; cursor:default; }
 
+.sr{ position:absolute; width:1px; height:1px; overflow:hidden; clip:rect(0 0 0 0); white-space:nowrap; }
+
+/* ---------- floating player controls ---------- */
+.player-hud{ position:absolute; top:0; left:0; right:0; z-index:4;
+  display:flex; align-items:center; gap:6px; padding:8px 10px;
+  background:linear-gradient(180deg, rgba(12,8,22,.82), rgba(12,8,22,0));
+  opacity:1; transition:opacity .25s ease; }
+.player-hud.idle{ opacity:0; pointer-events:none; }
+.video-wrap:hover .player-hud{ opacity:1; pointer-events:auto; }
+.player-hud.hidden{ display:none; }
+
+.hud-btn{ width:30px; height:30px; padding:0; flex-shrink:0;
+  display:inline-flex; align-items:center; justify-content:center;
+  border-radius:6px; border:1px solid rgba(255,255,255,.14);
+  background:rgba(18,13,31,.62); color:var(--text); }
+.hud-btn:hover:not(:disabled){ border-color:var(--accent); color:var(--accent);
+  box-shadow:0 0 10px rgba(255,77,157,.4); }
+.hud-btn svg{ width:15px; height:15px; fill:currentColor; }
+.hud-btn#next-note-btn:hover:not(:disabled){ border-color:var(--accent-2); color:var(--accent-2);
+  box-shadow:var(--glow-2); }
+/* back/forward glyphs are drawn as outlines, not solids */
+#back-btn svg, #fwd-btn svg{ fill:currentColor; }
+.i-pause{ display:none; }
+.player-hud.playing .i-play{ display:none; }
+.player-hud.playing .i-pause{ display:inline; }
+.hud-time{ color:var(--accent-2); font-size:.76rem; letter-spacing:.04em; margin-left:4px;
+  text-shadow:0 1px 4px rgba(0,0,0,.9); }
+
+/* ---------- the note shown over the video ---------- */
+.note-view{ position:absolute; left:0; right:0; bottom:0; height:20%; min-height:56px; z-index:4;
+  display:flex; flex-direction:column; justify-content:center;
+  padding:10px 16px; gap:3px;
+  background:linear-gradient(180deg, rgba(12,8,22,.55), rgba(12,8,22,.86));
+  border-top:1px solid rgba(255,77,157,.5);
+  backdrop-filter:blur(3px); -webkit-backdrop-filter:blur(3px);
+  transition:transform .22s ease, opacity .22s ease; }
+.note-view.hidden{ display:none; }
+.note-view.collapsed{ transform:translateY(100%); opacity:0; pointer-events:none; }
+.note-view-time{ color:var(--accent); font-size:.78rem; font-weight:700; letter-spacing:.04em; }
+.note-view-text{ color:var(--text); font-size:.92rem; line-height:1.45;
+  overflow-y:auto; text-shadow:0 1px 4px rgba(0,0,0,.85); }
+.note-view-text.muted{ color:var(--text-dim); font-style:italic; }
+
+/* the chevron rides on the panel's top edge and stays put when it collapses */
+.note-view-toggle{ position:absolute; top:-13px; left:50%; transform:translateX(-50%);
+  width:40px; height:20px; padding:0; z-index:5;
+  display:inline-flex; align-items:center; justify-content:center;
+  border-radius:6px 6px 0 0; border:1px solid rgba(255,77,157,.5); border-bottom:none;
+  background:rgba(12,8,22,.9); color:var(--accent); }
+.note-view-toggle svg{ width:14px; height:14px; fill:none; stroke:currentColor; stroke-width:2;
+  stroke-linecap:round; stroke-linejoin:round; transition:transform .22s ease; }
+.note-view.collapsed .note-view-toggle{ transform:translateX(-50%) translateY(-100%); opacity:1;
+  pointer-events:auto; }
+.note-view.collapsed .note-view-toggle svg{ transform:rotate(180deg); }
+.note-view.collapsed{ opacity:1; }
+.note-view.collapsed .note-view-body{ opacity:0; }
+
+/* ---------- topbar switch ---------- */
+.switch{ display:inline-flex; align-items:center; gap:8px; cursor:pointer; user-select:none; }
+.switch input{ position:absolute; opacity:0; width:0; height:0; }
+.switch-track{ width:34px; height:18px; border-radius:10px; flex-shrink:0;
+  background:var(--panel-2); border:1px solid var(--border); position:relative;
+  transition:background .15s ease, border-color .15s ease; }
+.switch-knob{ position:absolute; top:2px; left:2px; width:12px; height:12px; border-radius:50%;
+  background:var(--text-dim); transition:transform .15s ease, background .15s ease; }
+.switch input:checked + .switch-track{ background:var(--accent-dim); border-color:var(--accent); }
+.switch input:checked + .switch-track .switch-knob{ transform:translateX(16px); background:var(--accent);
+  box-shadow:0 0 8px rgba(255,77,157,.8); }
+.switch input:focus-visible + .switch-track{ outline:2px solid var(--accent-2); outline-offset:2px; }
+.switch-label{ color:var(--text-dim); font-size:.8rem; }
+.switch input:checked ~ .switch-label{ color:var(--text); }
+
 /* ---------- start screen ---------- */
 .start-screen{ position:absolute; inset:0; z-index:5; display:flex; align-items:center;
   justify-content:center; padding:24px; overflow-y:auto;
@@ -116,8 +188,15 @@ input[type=file]{ display:none; }
 .recent-main{ flex:1; min-width:0; }
 .recent-label{ font-size:.87rem; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
 .recent-meta{ color:var(--text-dim); font-size:.76rem; margin-top:2px; }
+.recent-edit,
 .recent-forget{ background:transparent; border:none; color:var(--text-dim); padding:3px 6px; flex-shrink:0; }
+.recent-edit{ opacity:0; transition:opacity .15s ease, color .15s ease; }
+.recent-row:hover .recent-edit{ opacity:1; }
+.recent-edit:hover{ color:var(--accent-2); box-shadow:none; }
 .recent-forget:hover{ color:var(--danger); box-shadow:none; }
+.recent-rename{ width:100%; font-family:inherit; font-size:.87rem; padding:2px 6px;
+  color:var(--text); background:#150f28; border:1px solid var(--accent-2);
+  border-radius:4px; outline:none; box-shadow:var(--glow-2); }
 
 .backup-block{ width:100%; margin-top:10px; padding-top:12px; text-align:left;
   border-top:1px solid var(--border); }
