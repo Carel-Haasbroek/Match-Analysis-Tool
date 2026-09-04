@@ -23,6 +23,7 @@
       <span class="switch-track" aria-hidden="true"><span class="switch-knob"></span></span>
       <span class="switch-label">Pause at notes</span>
     </label>
+    <button type="button" id="view-summary-btn">View summary</button>
     <span class="file-name mono" id="file-name"></span>
     <span class="status" id="status"></span>
   </header>
@@ -53,6 +54,16 @@
             <span class="sr">Play until the next note</span>
           </button>
           <span class="hud-time mono" id="time-display">0:00 / 0:00</span>
+
+          <span class="hud-sound" id="hud-sound">
+            <button type="button" class="hud-btn" id="mute-btn" disabled title="Mute / unmute (M)">
+              <svg class="i-loud" viewBox="0 0 16 16" aria-hidden="true"><path d="M7 2.5 3.8 5.2H1.5v5.6h2.3L7 13.5zM9.6 5.2a3.6 3.6 0 0 1 0 5.6M11.6 3.1a6.4 6.4 0 0 1 0 9.8"/></svg>
+              <svg class="i-muted" viewBox="0 0 16 16" aria-hidden="true"><path d="M7 2.5 3.8 5.2H1.5v5.6h2.3L7 13.5zM10.2 6.2l3.6 3.6M13.8 6.2l-3.6 3.6"/></svg>
+              <span class="sr">Mute</span>
+            </button>
+            <input type="range" id="volume" min="0" max="1" step="0.01" value="1"
+                   disabled aria-label="Volume" title="Volume">
+          </span>
         </div>
 
         <div class="note-view hidden" id="note-view">
@@ -232,6 +243,29 @@
     <div class="lightbox-actions">
       <button type="button" id="recover-skip">Skip this one</button>
       <button type="button" id="recover-accept" class="primary">Use this drawing</button>
+    </div>
+  </div>
+</div>
+
+<div class="lightbox" id="summary-modal">
+  <div class="summary-modal-panel">
+    <header class="summary-modal-head">
+      <h2 id="summary-modal-title">Summary</h2>
+      <span class="summary-modal-sub" id="summary-modal-sub"></span>
+      <span class="grow"></span>
+      <button type="button" id="summary-modal-close">Close</button>
+    </header>
+    <div class="summary-modal-body">
+      <section class="summary-modal-notes">
+        <h3>Notes</h3>
+        <div class="summary-modal-list" id="summary-modal-list"></div>
+      </section>
+      <section class="summary-modal-write">
+        <h3>Summary</h3>
+        <textarea id="summary-modal-text"
+                  placeholder="Your thoughts on this match — patterns, what worked, what to fix…"></textarea>
+        <div class="summary-status" id="summary-modal-status"></div>
+      </section>
     </div>
   </div>
 </div>

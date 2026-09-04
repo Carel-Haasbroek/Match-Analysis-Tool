@@ -18,6 +18,8 @@
   var holdRange = $('hold-range'), holdValue = $('hold-value');
   var playerHud = $('player-hud'), nextNoteBtn = $('next-note-btn'), autoPauseBox = $('auto-pause');
   var noteView = $('note-view'), noteViewTime = $('note-view-time'), noteViewText = $('note-view-text');
+  var muteBtn = $('mute-btn'), volumeRange = $('volume');
+  var summaryModal = $('summary-modal'), summaryModalText = $('summary-modal-text');
   var lightbox = $('lightbox'), lightboxImg = $('lightbox-img'), lightboxTime = $('lightbox-time'),
       lightboxText = $('lightbox-text');
 
@@ -28,6 +30,7 @@
   var hasFrame = false, reviewNote = null, overlayKey = null;
   var overlayTimer = null, overlayEndsAt = 0, overlayRemaining = 0, lastSyncTime = 0;
   var autoPause = false, playTarget = null, panelNoteId = null, notePanelOpen = true;
+  var volume = 1, muted = false;
   var hudIdleTimer = null;
   var activePane = 'notes';
 
@@ -250,6 +253,10 @@
       return video.videoWidth ? { w: video.videoWidth, h: video.videoHeight } : null;
     };
     api.getTitle = function(){ return ''; };
+    api.getVolume = function(){ return video.volume; };            /* 0..1 */
+    api.setVolume = function(v){ video.volume = v; };
+    api.isMuted = function(){ return video.muted; };
+    api.setMuted = function(m){ video.muted = !!m; };
     api.canCaptureFrame = function(){ return true; };
     api.captureFrame = function(c, w, h){ c.drawImage(video, 0, 0, w, h); };
     api.destroy = function(){
@@ -306,6 +313,8 @@
        what we asked for; repauseUntil is the short window in which an unwanted
        PLAYING state gets pushed back to paused. */
     var pauseRequested = false, repauseUntil = 0;
+    /* Volume can be set before the iframe API is ready; apply it on load. */
+    var pendingVolume = 1, pendingMuted = false;
 
     video.style.display = 'none';
     ytHolder.style.display = 'block'; /* the stylesheet hides it by default */
@@ -331,6 +340,10 @@
             if (dead) return;
             dur = yt.getDuration() || 0;
             try{ title = (yt.getVideoData() || {}).title || ''; }catch(e){}
+            try{
+              yt.setVolume(Math.round(pendingVolume * 100));
+              if (pendingMuted) yt.mute(); else yt.unMute();
+            }catch(e){}
             if (startAt) yt.seekTo(startAt, true);
             timer = setInterval(tick, 150);
             if (api.onReady) api.onReady();
@@ -401,6 +414,23 @@
     api.getDuration = function(){ return dur; };
     api.getAspect = function(){ return null; };
     api.getTitle = function(){ return title; };
+    /* YouTube speaks 0..100; the rest of the app speaks 0..1. */
+    api.getVolume = function(){
+      return (yt && yt.getVolume) ? (yt.getVolume() / 100) : pendingVolume;
+    };
+    api.setVolume = function(v){
+      pendingVolume = v;
+      if (yt && yt.setVolume) yt.setVolume(Math.round(v * 100));
+    };
+    api.isMuted = function(){
+      return (yt && yt.isMuted) ? yt.isMuted() : pendingMuted;
+    };
+    api.setMuted = function(m){
+      pendingMuted = !!m;
+      if (!yt) return;
+      if (m){ if (yt.mute) yt.mute(); }
+      else { if (yt.unMute) yt.unMute(); }
+    };
     api.canCaptureFrame = function(){ return false; };
     api.captureFrame = function(){};
     api.destroy = function(){
@@ -437,7 +467,8 @@
     fileNameEl.title = src.url || src.label;
     hideStart();
 
-    [playBtn, backBtn, fwdBtn, nextNoteBtn, markBtn, seek].forEach(function(el){ el.disabled = false; });
+    [playBtn, backBtn, fwdBtn, nextNoteBtn, markBtn, seek, muteBtn, volumeRange]
+      .forEach(function(el){ el.disabled = false; });
     videoWrap.style.aspectRatio = '16 / 9';
     seek.value = 0;
     seek.max = 100;
@@ -446,6 +477,7 @@
     setStatus(src.kind === 'youtube' ? 'Loading the YouTube player…' : '');
 
     var p = player = makePlayer();
+    applySound();
 
     p.onReady = function(){
       var a = p.getAspect();
@@ -744,12 +776,13 @@
 
   document.addEventListener('keydown', function(e){
     if (e.target.tagName === 'TEXTAREA' || e.target.tagName === 'INPUT') return;
-    if (e.key === 'Escape'){ closeLightbox(); muteOverlay(); return; }
+    if (e.key === 'Escape'){ closeSummaryModal(); closeLightbox(); muteOverlay(); return; }
     if (!player) return;
     if (e.code === 'Space'){ e.preventDefault(); playBtn.click(); }
     if (e.key === 'ArrowLeft') backBtn.click();
     if (e.key === 'ArrowRight') fwdBtn.click();
     if (e.key === 'n' || e.key === 'N') playToNextNote();
+    if (e.key === 'm' || e.key === 'M') muteBtn.click();
   });
 
   /* ---------- draw mode ---------- */
@@ -900,7 +933,9 @@
     store.set(PREFS_KEY, {
       overlayHold: overlayHold,
       autoPause: autoPause,
-      notePanelOpen: notePanelOpen
+      notePanelOpen: notePanelOpen,
+      volume: volume,
+      muted: muted
     });
   }
 
@@ -926,6 +961,9 @@
       autoPause = !!p.autoPause;
       autoPauseBox.checked = autoPause;
       applyNotePanelOpen(p.notePanelOpen !== false, false);
+      volume = (typeof p.volume === 'number') ? Math.min(1, Math.max(0, p.volume)) : 1;
+      muted = !!p.muted;
+      applySound();
     });
   }
 
@@ -1130,7 +1168,8 @@
 
     notes.forEach(function(note){
       var item = document.createElement('div');
-      item.className = 'note-item';
+      item.className = 'note-item' + (note.id === panelNoteId ? ' current' : '');
+      item.dataset.noteId = note.id;
 
       var thumb = document.createElement('img');
       thumb.className = 'note-thumb';
@@ -1327,12 +1366,13 @@
     var n = noteAt(time);
     if (!n){
       noteView.classList.add('hidden');
-      panelNoteId = null;
+      if (panelNoteId !== null){ panelNoteId = null; highlightCurrentNote(); }
       return;
     }
     noteView.classList.remove('hidden');
     if (n.id === panelNoteId) return;   /* same note — leave it alone */
     panelNoteId = n.id;
+    highlightCurrentNote();
     /* Reaching a note reveals it, even if the panel was collapsed. Collapsing
        therefore dismisses the current note rather than muting the panel for good.
        Not saved to prefs — only an explicit chevron click records a preference. */
@@ -1370,6 +1410,128 @@
     if (player && !player.isPaused()) hudIdleSoon(); else showHud();
   });
 
+  /* ---------- sound ---------- */
+  /* Both sources speak 0..1 through the facade; YouTube's 0..100 is its own problem. */
+  function applySound(){
+    if (player && player.setVolume){
+      player.setVolume(volume);
+      player.setMuted(muted);
+    }
+    volumeRange.value = volume;
+    muteBtn.classList.toggle('muted', muted || volume === 0);
+    muteBtn.title = muted ? 'Unmute (M)' : 'Mute (M)';
+  }
+
+  volumeRange.addEventListener('input', function(){
+    volume = parseFloat(this.value);
+    /* dragging up from silence is an unmute */
+    if (volume > 0 && muted) muted = false;
+    applySound();
+  });
+  volumeRange.addEventListener('change', savePrefs);
+
+  muteBtn.addEventListener('click', function(){
+    muted = !muted;
+    /* unmuting from a zeroed slider needs an audible level to return to */
+    if (!muted && volume === 0){ volume = 0.5; }
+    applySound();
+    savePrefs();
+  });
+
+  /* ---------- highlighting the note playback has reached ---------- */
+  function highlightCurrentNote(){
+    var rows = notesList.querySelectorAll('.note-item');
+    for (var i = 0; i < rows.length; i++){
+      var on = rows[i].dataset.noteId === panelNoteId;
+      rows[i].classList.toggle('current', on);
+      if (on) scrollIntoList(rows[i]);
+    }
+    var mrows = $('summary-modal-list').querySelectorAll('.summary-modal-row');
+    for (var j = 0; j < mrows.length; j++){
+      mrows[j].classList.toggle('current', mrows[j].dataset.noteId === panelNoteId);
+    }
+  }
+
+  /* Scroll the panel, not the page — scrollIntoView would drag the whole layout.
+     Measured with rects rather than offsetTop, which is relative to the nearest
+     positioned ancestor and so not comparable with the list's own scrollTop. */
+  function scrollIntoList(el){
+    var lr = notesList.getBoundingClientRect(), er = el.getBoundingClientRect();
+    if (er.top < lr.top){
+      notesList.scrollTop -= (lr.top - er.top) + 8;
+    } else if (er.bottom > lr.bottom){
+      notesList.scrollTop += (er.bottom - lr.bottom) + 8;
+    }
+  }
+
+  /* ---------- summary modal ---------- */
+  function openSummaryModal(){
+    $('summary-modal-sub').textContent = displayName();
+    summaryModalText.value = summaryText.value;
+    $('summary-modal-status').textContent = $('summary-status').textContent;
+    renderSummaryModalList();
+    highlightCurrentNote();
+    summaryModal.classList.add('open');
+    summaryModalText.focus();
+  }
+  function closeSummaryModal(){
+    summaryModal.classList.remove('open');
+  }
+
+  $('view-summary-btn').addEventListener('click', openSummaryModal);
+  $('summary-modal-close').addEventListener('click', closeSummaryModal);
+  summaryModal.addEventListener('click', function(e){
+    if (e.target === summaryModal) closeSummaryModal();
+  });
+
+  /* One summary, two boxes — mirror the text so neither can go stale. */
+  summaryModalText.addEventListener('input', function(){
+    summaryText.value = this.value;
+    queueSummarySave();
+    $('summary-modal-status').textContent = 'Saving…';
+  });
+
+  function renderSummaryModalList(){
+    var host = $('summary-modal-list');
+    host.innerHTML = '';
+    if (!notes.length){
+      var empty = document.createElement('div');
+      empty.className = 'summary-empty';
+      empty.textContent = 'No notes on this video yet.';
+      host.appendChild(empty);
+      return;
+    }
+    notes.forEach(function(note){
+      var row = document.createElement('div');
+      row.className = 'summary-modal-row';
+      row.dataset.noteId = note.id;
+
+      if (note.image){
+        var img = document.createElement('img');
+        img.src = note.image;
+        img.alt = 'Drawing at ' + fmt(note.time);
+        row.appendChild(img);
+      }
+
+      var m = document.createElement('div');
+      m.className = 'm';
+      var mt = document.createElement('div');
+      mt.className = 'mt';
+      mt.textContent = fmt(note.time);
+      var mx = document.createElement('div');
+      mx.className = 'mx' + (note.text ? '' : ' muted');
+      mx.textContent = note.text || 'Drawing only';
+      m.appendChild(mt); m.appendChild(mx);
+      row.appendChild(m);
+
+      row.addEventListener('click', function(){
+        closeSummaryModal();
+        jumpTo(note.time, note);
+      });
+      host.appendChild(row);
+    });
+  }
+
   /* ---------- notes / summary tabs ---------- */
   function showPane(name){
     activePane = name;
@@ -1392,33 +1554,41 @@
 
   function loadSummary(){
     summaryText.value = '';
-    $('summary-status').textContent = '';
+    summaryModalText.value = '';
+    setSummaryStatus('');
     var k = summaryKey();
     if (!k) return Promise.resolve();
     return store.get(k).then(function(rec){
       /* videoKey may have moved on while this was in flight */
       if (summaryKey() !== k) return;
       summaryText.value = (rec && typeof rec.text === 'string') ? rec.text : '';
-      $('summary-status').textContent = rec && rec.updated
-        ? 'Last edited ' + relTime(rec.updated) : '';
+      summaryModalText.value = summaryText.value;
+      setSummaryStatus(rec && rec.updated ? 'Last edited ' + relTime(rec.updated) : '');
     });
   }
 
   var summarySaveTimer = null;
+  function setSummaryStatus(msg){
+    $('summary-status').textContent = msg;
+    $('summary-modal-status').textContent = msg;
+  }
   function queueSummarySave(){
     if (summarySaveTimer) clearTimeout(summarySaveTimer);
-    $('summary-status').textContent = 'Saving…';
+    setSummaryStatus('Saving…');
     summarySaveTimer = setTimeout(function(){
       summarySaveTimer = null;
       var k = summaryKey();
       if (!k) return;
       var rec = { text: summaryText.value, updated: Date.now() };
       Promise.resolve(store.set(k, rec)).then(function(){
-        $('summary-status').textContent = 'Saved · ' + store.label;
+        setSummaryStatus('Saved · ' + store.label);
       });
     }, 600);
   }
-  summaryText.addEventListener('input', queueSummarySave);
+  summaryText.addEventListener('input', function(){
+    summaryModalText.value = summaryText.value;
+    queueSummarySave();
+  });
   summaryText.addEventListener('blur', function(){
     if (summarySaveTimer){ clearTimeout(summarySaveTimer); summarySaveTimer = null;
       var k = summaryKey();
