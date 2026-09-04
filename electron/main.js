@@ -15,7 +15,12 @@ let http = null;
 let port = 0;
 
 function createWindow(){
+  /* A packaged app takes its window icon from the exe. Running from source there is
+     no exe, so point at the png or the window shows Electron's default. */
+  const devIcon = path.join(ROOT, 'build', 'icon.png');
+
   win = new BrowserWindow({
+    icon: app.isPackaged ? undefined : (fs.existsSync(devIcon) ? devIcon : undefined),
     width: 1440,
     height: 900,
     minWidth: 900,
