@@ -48,12 +48,12 @@ does not delete your notes** — see below.
 In **vaults**. A vault is a folder your notes live in — a plain tree you can open, browse,
 copy to a stick or drop in Dropbox. You start with one, at
 **`%APPDATA%\video-notes\Notes`**, and can add as many as you like under
-**Settings → Vaults**.
+**Preferences → Vaults**.
 
 **All your vaults are used at once.** They are not modes you switch between: every session
 from every vault appears in the same list, and the All sessions tree shows the vault as the
 outermost level, with your folders nested inside it. Only one thing distinguishes them —
-which vault a *new* session goes into, marked "new notes" in Settings and changed with
+which vault a *new* session goes into, marked "new notes" in Preferences and changed with
 **Make default**.
 
 The installed app, the portable exe and a run from source all read the same vaults, so it
@@ -76,7 +76,7 @@ is nothing special about the one you started with.
 
 ### Adding and removing vaults
 
-**Settings → Vaults → Add a vault…** points at any folder. If it already holds notes —
+**Preferences → Vaults → Add a vault…** points at any folder. If it already holds notes —
 because a coach shared it, or you kept an old one — its sessions simply appear; there is
 nothing to import.
 

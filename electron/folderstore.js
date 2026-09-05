@@ -181,6 +181,95 @@ class FolderStore {
     if (changed){ try { this._savePaths(); } catch (e) {} }
   }
 
+  /* ---------- folders you made, as opposed to sessions ---------- */
+
+  /*
+   * A folder used to exist only as a property on a library entry, so an empty one had
+   * nowhere to live and vanished on the next read. These work on the directories
+   * themselves, which is what makes "create a folder" mean anything.
+   *
+   * Paths are the app's own shape - "Competition 2026/Nationals" - not the platform's.
+   */
+  folders(){
+    const out = [];
+    const walk = (dir, rel) => {
+      for (const name of listDir(dir)){
+        if (name === 'drawings' || name === 'other') continue;
+        const full = path.join(dir, name);
+        let st;
+        try { st = fs.statSync(full); } catch (e) { continue; }
+        if (!st.isDirectory()) continue;
+        if (this._keyInFolder(full)) continue;        /* a session, not a folder */
+        const childRel = rel ? rel + '/' + name : name;
+        out.push(childRel);
+        walk(full, childRel);
+      }
+    };
+    walk(this.root, '');
+    return out.sort();
+  }
+
+  _groupPath(rel){
+    const parts = String(rel || '').split('/')
+      .map((x) => x.trim()).filter(Boolean).map(safeSegment);
+    return parts.length ? path.join(this.root, ...parts) : null;
+  }
+
+  createFolder(rel){
+    const dir = this._groupPath(rel);
+    if (!dir) return false;
+    try { fs.mkdirSync(dir, { recursive: true }); return true; } catch (e) { return false; }
+  }
+
+  renameFolder(from, to){
+    const src = this._groupPath(from), dst = this._groupPath(to);
+    if (!src || !dst || src === dst) return false;
+    if (!fs.existsSync(src) || fs.existsSync(dst)) return false;
+    try {
+      fs.mkdirSync(path.dirname(dst), { recursive: true });
+      fs.renameSync(src, dst);
+    } catch (e) { return false; }
+    this.rescan();                       /* the sessions inside moved with it */
+    return true;
+  }
+
+  /* Only when there is no session anywhere inside. Removing a folder must never be a
+     roundabout way of deleting notes - what goes is empty directories and stray files. */
+  removeFolder(rel){
+    const dir = this._groupPath(rel);
+    if (!dir || !fs.existsSync(dir)) return false;
+    if (this._holdsSession(dir)) return false;
+    try { fs.rmSync(dir, { recursive: true, force: true }); } catch (e) { return false; }
+    this.rescan();
+    return true;
+  }
+
+  _holdsSession(dir){
+    if (this._keyInFolder(dir)) return true;
+    for (const name of listDir(dir)){
+      const full = path.join(dir, name);
+      try {
+        if (fs.statSync(full).isDirectory() && this._holdsSession(full)) return true;
+      } catch (e) {}
+    }
+    return false;
+  }
+
+  /* ---------- what a move between vaults needs ---------- */
+
+  /* Where a session's folder is, for a copy that has to take every coach's file. */
+  sessionPath(key){ return this._existingDir(key); }
+
+  /* A free directory for a session arriving from elsewhere, under an optional group. */
+  freeSessionPath(name, groupPath){
+    const base = safeSegment(name || 'session');
+    const group = this._groupPath(groupPath);
+    const parent = group || this.root;
+    let rel = base, n = 2;
+    while (fs.existsSync(path.join(parent, rel))) rel = base + ' (' + (n++) + ')';
+    return path.join(parent, rel);
+  }
+
   _keyInFolder(dir){
     const names = listDir(dir);
     for (const n of names){

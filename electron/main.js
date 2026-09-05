@@ -90,6 +90,16 @@ function vaultRows(){
 
 ipcMain.handle('vault:list', () => vaultRows());
 
+/* folders, which are real directories in a vault */
+ipcMain.handle('vault:folders', (e, id) => store.folders(id));
+ipcMain.handle('folder:create', (e, id, rel) => store.createFolder(id, rel));
+ipcMain.handle('folder:rename', (e, id, a, b) => store.renameFolder(id, a, b));
+ipcMain.handle('folder:remove', (e, id, rel) => store.removeFolder(id, rel));
+
+/* dragging a session into another vault moves its files between roots */
+ipcMain.handle('session:toVault', (e, key, toVaultId, groupPath) =>
+  store.moveSessionToVault(key, toVaultId, groupPath));
+
 ipcMain.handle('vault:add', async () => {
   const r = await dialog.showOpenDialog(win, {
     title: 'Choose a folder to keep notes in',

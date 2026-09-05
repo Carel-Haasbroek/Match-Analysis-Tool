@@ -199,6 +199,69 @@ function main(){
 
   fs.rmSync(shared, { recursive: true, force: true });
 
+  /* ---------- moving a session into another vault ---------- */
+  /*
+   * The check that earns its keep: the session being moved has two coaches' files in it.
+   * Reading it out of one store and writing it into the other would keep only the
+   * current coach's notes whole and reduce the other's to a stub, so his work would go
+   * missing. The move copies the directory, which takes everyone's files with it.
+   */
+  console.log('\nmoving a session between vaults');
+  const { Vaults } = require('./vaults');
+  const { VaultStore } = require('./vaultstore');
+
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), 'vn-move-home-'));
+  const squad = fs.mkdtempSync(path.join(os.tmpdir(), 'vn-move-squad-'));
+  const userData = fs.mkdtempSync(path.join(os.tmpdir(), 'vn-move-cfg-'));
+
+  const vs = new Vaults(userData, home);
+  const squadVault = vs.add(squad, 'Squad').vault;
+  const store = new VaultStore(vs, path.join(userData, 'prefs.json'));
+  store.setAuthor('carel-7f3a');
+
+  const MK = 'vnotes:move.mp4_7';
+  store.set('vnotes:index', JSON.stringify([
+    { key: MK, kind: 'file', customName: 'Moving session', vault: vs.first().id }
+  ]));
+  store.set(MK, JSON.stringify([{ id: 'm1', time: 1, text: 'mine', 
+    image: 'data:image/png;base64,iVBORw0KGgo=' }]));
+
+  /* a second coach's file, written straight into the same session folder */
+  const srcDir = store.storeFor(vs.first().id).sessionPath(MK);
+  fs.writeFileSync(path.join(srcDir, 'notes.marius-2b91.json'), JSON.stringify({
+    key: MK, author: 'marius-2b91',
+    notes: [{ id: 'm2', time: 5, text: 'theirs', by: 'marius-2b91' }]
+  }));
+  eq('both coaches have notes in it before the move',
+     JSON.parse(store.get(MK)).length, 2);
+
+  const moved = store.moveSessionToVault(MK, squadVault.id, 'Nationals');
+  ok('the move reports success', moved.ok, JSON.stringify(moved));
+  ok('the session is gone from the vault it left', !fs.existsSync(srcDir), srcDir);
+
+  const landed = path.join(squad, 'Nationals', 'Moving session');
+  ok('and is in the one it went to', fs.existsSync(landed), landed);
+  ok('the other coach\'s file came with it',
+     fs.existsSync(path.join(landed, 'notes.marius-2b91.json')),
+     fs.readdirSync(landed).join(', '));
+  ok('so did the drawings',
+     fs.existsSync(path.join(landed, 'drawings')) &&
+     fs.readdirSync(path.join(landed, 'drawings')).length > 0);
+
+  eq('and both coaches\' notes read back from the new vault',
+     JSON.parse(store.get(moved.key) || '[]').length, 2);
+
+  /* the same session in both vaults is a merge, not a move */
+  store.set(MK, JSON.stringify([{ id: 'm9', time: 2, text: 'a fresh one' }]));
+  const refused = store.moveSessionToVault(MK, squadVault.id, '');
+  ok('moving onto a session the other vault already has is refused',
+     !refused.ok && refused.reason === 'exists', JSON.stringify(refused));
+  eq('and nothing was taken from the source', JSON.parse(store.get(MK)).length, 1);
+
+  fs.rmSync(home, { recursive: true, force: true });
+  fs.rmSync(squad, { recursive: true, force: true });
+  fs.rmSync(userData, { recursive: true, force: true });
+
   /* ---------- a session another coach created, found by scanning ---------- */
   const fresh = fs.mkdtempSync(path.join(os.tmpdir(), 'vn-synctest-scan-'));
   fs.mkdirSync(path.join(fresh, 'Theirs'), { recursive: true });
