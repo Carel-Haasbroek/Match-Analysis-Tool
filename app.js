@@ -26,7 +26,7 @@
   var fileNameEl = $('file-name'), statusEl = $('status');
   var homeView = $('home'), startClose = $('start-close'), videoWrap = $('video-wrap');
   var workspace = document.querySelector('.workspace');
-  var recentList = $('recent-list'), urlInput = $('url-input'), topUrlInput = $('top-url-input');
+  var recentList = $('recent-list');
   var seek = $('seek'), markStrip = $('mark-strip');
   var playBtn = $('play-btn'), backBtn = $('back-btn'), fwdBtn = $('fwd-btn');
   var timeDisplay = $('time-display'), markBtn = $('mark-btn');
@@ -506,7 +506,7 @@
     hideStart();
 
     [playBtn, backBtn, fwdBtn, nextNoteBtn, markBtn, seek, muteBtn, volumeRange,
-     rotateBtn, rateBtn].forEach(function(el){ el.disabled = false; });
+     rotateBtn, rateBtn, $('view-summary-btn')].forEach(function(el){ el.disabled = false; });
     videoWrap.style.setProperty('--ar', 16/9);
     seek.value = 0;
     seek.max = 100;
@@ -718,23 +718,11 @@
       if (info) loadFilePath(info, expectKey || null);
     });
   }
-  $('load-btn').addEventListener('click', function(){ chooseVideo(null); });
-  $('empty-load-btn').addEventListener('click', function(){ chooseVideo(null); });
-
   videoWrap.addEventListener('dragover', function(e){ e.preventDefault(); });
   videoWrap.addEventListener('drop', function(e){
     e.preventDefault();
     var f = e.dataTransfer.files && e.dataTransfer.files[0];
     if (f && f.type.indexOf('video/') === 0) loadFileVideo(f, null);
-  });
-
-  $('top-url-form').addEventListener('submit', function(e){
-    e.preventDefault();
-    if (openUrl(topUrlInput.value)) topUrlInput.value = '';
-  });
-  $('start-url-form').addEventListener('submit', function(e){
-    e.preventDefault();
-    if (openUrl(urlInput.value)) urlInput.value = '';
   });
 
   /* ---------- start screen + library ---------- */
@@ -751,7 +739,7 @@
   }
 
   $('recent-btn').addEventListener('click', showStart);
-  $('session-filter').addEventListener('input', renderRecent);
+  $('session-filter').addEventListener('input', renderSessionTree);
   startClose.addEventListener('click', function(){ if (player) hideStart(); });
 
   function loadLibrary(){
@@ -839,8 +827,78 @@
     return Object.keys(set).sort();
   }
 
+  /* The home page shows the few sessions you keep coming back to and nothing else.
+     Folders, searching, renaming and moving all live in the All sessions modal, which
+     is what took the clutter off the page. */
+  var RECENT_ON_HOME = 8;
+
   function renderRecent(){
+    renderHomeRecent();
+    if (sessionsModal.classList.contains('open')) renderSessionTree();
+  }
+
+  function renderHomeRecent(){
     recentList.innerHTML = '';
+    var seeAll = $('see-all-btn');
+    if (!library.length){
+      var empty = document.createElement('div');
+      empty.className = 'recent-empty';
+      empty.textContent = 'Nothing yet. Open a video or a link and it shows up here.';
+      recentList.appendChild(empty);
+      seeAll.classList.add('hidden');
+      return;
+    }
+
+    library.slice(0, RECENT_ON_HOME).forEach(function(entry){
+      var row = document.createElement('div');
+      row.className = 'recent-row plain';
+
+      var kind = document.createElement('span');
+      kind.className = 'recent-kind ' + (entry.kind === 'youtube' ? 'yt' : 'file');
+      kind.textContent = entry.kind === 'youtube' ? 'YT' : 'FILE';
+
+      var main = document.createElement('div');
+      main.className = 'recent-main';
+      var label = document.createElement('div');
+      label.className = 'recent-label';
+      label.textContent = entryName(entry);
+      var meta = document.createElement('div');
+      meta.className = 'recent-meta';
+      var bits = [(entry.noteCount || 0) + ' note' + (entry.noteCount === 1 ? '' : 's')];
+      if (entry.lastOpened) bits.push(relTime(entry.lastOpened));
+      if (folderOf(entry)) bits.push(folderOf(entry));
+      meta.textContent = bits.join(' · ');
+      main.appendChild(label);
+      main.appendChild(meta);
+
+      /* a moved video is worth saying here even though fixing it is done in the modal */
+      if (entry.missing && entry.filePath){
+        row.classList.add('missing');
+        var warn = document.createElement('div');
+        warn.className = 'recent-missing';
+        warn.textContent = 'Video not found at ' + entry.filePath;
+        main.appendChild(warn);
+      }
+
+      row.appendChild(kind);
+      row.appendChild(main);
+      row.addEventListener('click', function(){ openEntry(entry); });
+      recentList.appendChild(row);
+    });
+
+    seeAll.classList.toggle('hidden', library.length <= RECENT_ON_HOME);
+    seeAll.textContent = 'All ' + library.length + ' sessions →';
+  }
+
+  /* ---------- the sessions tree ---------- */
+  /* Folders nest the way they do on disk, so what you fold open here is the same shape
+     you see in Explorer. Collapsed state is per-run: it is a view preference, not
+     something worth writing to the notes folder. */
+  var collapsed = {};
+
+  function renderSessionTree(){
+    var host = $('sessions-tree');
+    host.innerHTML = '';
     var q = ($('session-filter').value || '').trim().toLowerCase();
     var shown = q
       ? library.filter(function(e){
@@ -848,50 +906,91 @@
                  folderOf(e).toLowerCase().indexOf(q) >= 0;
         })
       : library;
-    if (q && !shown.length){
-      var none = document.createElement('div');
-      none.className = 'recent-empty';
-      none.textContent = 'No session matches "' + q + '".';
-      recentList.appendChild(none);
-      return;
-    }
+
     if (!library.length){
-      var empty = document.createElement('div');
-      empty.className = 'recent-empty';
-      empty.textContent = 'Nothing yet. Videos and links you open show up here.';
-      recentList.appendChild(empty);
+      host.appendChild(emptyLine('Nothing yet. Open a video or a link and it shows up here.'));
+      return;
+    }
+    if (!shown.length){
+      host.appendChild(emptyLine('No session matches "' + $('session-filter').value.trim() + '".'));
       return;
     }
 
-    /* group headers, ungrouped last so a new session is easy to find */
-    var groups = {}, order = [];
+    /* build the folder tree from the paths themselves */
+    var root = node('');
     shown.forEach(function(e){
-      var f = folderOf(e);
-      if (!groups[f]){ groups[f] = []; order.push(f); }
-      groups[f].push(e);
-    });
-    order.sort(function(a, b){
-      if (!a) return 1;
-      if (!b) return -1;
-      return a.localeCompare(b);
+      var at = root;
+      folderOf(e).split('/').forEach(function(part){
+        part = part.trim();
+        if (!part) return;
+        var path = at.path ? at.path + '/' + part : part;
+        if (!at.kids[part]) at.kids[part] = node(path);
+        at = at.kids[part];
+      });
+      at.entries.push(e);
     });
 
-    order.forEach(function(f){
-      if (order.length > 1 || f){
-        var head = document.createElement('div');
-        head.className = 'recent-group' + (f ? '' : ' loose');
-        head.textContent = f || 'Not in a folder';
-        var count = document.createElement('span');
-        count.className = 'recent-group-count';
-        count.textContent = groups[f].length;
-        head.appendChild(count);
-        recentList.appendChild(head);
+    Object.keys(root.kids).sort().forEach(function(k){ drawFolder(root.kids[k], host, 0); });
+    if (root.entries.length){
+      if (Object.keys(root.kids).length){
+        var loose = document.createElement('div');
+        loose.className = 'tree-folder loose';
+        loose.textContent = 'Not in a folder';
+        host.appendChild(loose);
       }
-      groups[f].forEach(renderRow);
-    });
-    return;
+      root.entries.forEach(function(e){ host.appendChild(sessionRow(e, 0)); });
+    }
 
-    function renderRow(entry){
+    function node(path){ return { path: path, kids: {}, entries: [] }; }
+    function emptyLine(text){
+      var d = document.createElement('div');
+      d.className = 'recent-empty';
+      d.textContent = text;
+      return d;
+    }
+    function countIn(n){
+      var total = n.entries.length;
+      Object.keys(n.kids).forEach(function(k){ total += countIn(n.kids[k]); });
+      return total;
+    }
+
+    function drawFolder(n, host, depth){
+      /* a search result inside a folded folder would otherwise be invisible */
+      var open = q ? true : !collapsed[n.path];
+      var head = document.createElement('div');
+      head.className = 'tree-folder' + (open ? '' : ' shut');
+      head.style.paddingLeft = (10 + depth * 16) + 'px';
+
+      var caret = document.createElement('span');
+      caret.className = 'tree-caret';
+      caret.textContent = open ? '▾' : '▸';
+      var name = document.createElement('span');
+      name.className = 'tree-name';
+      name.textContent = n.path.split('/').pop();
+      var count = document.createElement('span');
+      count.className = 'recent-group-count';
+      count.textContent = countIn(n);
+
+      head.appendChild(caret); head.appendChild(name); head.appendChild(count);
+      head.addEventListener('click', function(){
+        collapsed[n.path] = !collapsed[n.path];
+        renderSessionTree();
+      });
+      host.appendChild(head);
+      if (!open) return;
+
+      Object.keys(n.kids).sort().forEach(function(k){ drawFolder(n.kids[k], host, depth + 1); });
+      n.entries.forEach(function(e){ host.appendChild(sessionRow(e, depth + 1)); });
+    }
+  }
+
+  function sessionRow(entry, depth){
+    var row = renderRow(entry);
+    row.style.paddingLeft = (10 + (depth || 0) * 16) + 'px';
+    return row;
+  }
+
+  function renderRow(entry){
       var row = document.createElement('div');
       row.className = 'recent-row';
 
@@ -1013,10 +1112,10 @@
       row.appendChild(forget);
       row.addEventListener('click', function(){
         if (main.querySelector('.recent-rename')) return;   /* mid-edit */
+        closeSessionsModal();
         openEntry(entry);
       });
-      recentList.appendChild(row);
-    }
+      return row;
   }
 
   function setEntryFolder(entry, folder){
@@ -1615,38 +1714,90 @@
   }
 
   /* ---------- making a segment straight from a link ---------- */
-  /* The clip machinery already exists for marking in and out inside a video; this is
-     the same thing without having to load the whole match first. Same key, so a
-     segment made twice is the same session rather than a second empty one. */
-  var segmentModal = $('segment-modal');
+  /* Every way into a session is this one modal. A segment is just a link with bounds,
+     so the two share a form rather than sitting in separate places; the clip key is the
+     same one marking in and out produces, so the same segment twice is one session. */
+  var newSessionModal = $('new-session-modal');
+  var sessionsModal = $('sessions-modal');
+  var settingsModal = $('settings-modal');
 
-  function openSegmentModal(){
+  /* every modal here closes on its backdrop and on Escape, which the global key
+     handler cannot do for it because it steps aside for form fields */
+  function wireModal(el, close){
+    el.addEventListener('click', function(e){ if (e.target === el) close(); });
+    el.addEventListener('keydown', function(e){
+      if (e.key === 'Escape'){ e.stopPropagation(); close(); }
+    });
+  }
+
+  function segmentOn(){ return $('segment-toggle').checked; }
+
+  function openNewSession(){
     $('segment-error').textContent = '';
-    segmentModal.classList.add('open');
+    newSessionModal.classList.add('open');
     setTimeout(function(){ $('segment-url').focus(); }, 30);
   }
-  function closeSegmentModal(){ segmentModal.classList.remove('open'); }
+  function closeNewSession(){ newSessionModal.classList.remove('open'); }
 
   function segmentError(msg, focusId){
     $('segment-error').textContent = msg;
     if (focusId) $(focusId).focus();
   }
 
-  $('segment-btn').addEventListener('click', openSegmentModal);
-  $('segment-cancel').addEventListener('click', closeSegmentModal);
-  segmentModal.addEventListener('click', function(e){
-    if (e.target === segmentModal) closeSegmentModal();
+  function clearNewSession(){
+    ['segment-url', 'segment-start', 'segment-end', 'segment-name'].forEach(function(id){
+      $(id).value = '';
+    });
+  }
+
+  $('new-session-btn').addEventListener('click', openNewSession);
+  $('segment-cancel').addEventListener('click', closeNewSession);
+  wireModal(newSessionModal, closeNewSession);
+
+  /* the times only exist when you say you want part of the video */
+  $('segment-toggle').addEventListener('change', function(){
+    $('segment-times').classList.toggle('hidden', !segmentOn());
+    $('segment-hint').classList.toggle('hidden', !segmentOn());
+    if (segmentOn()) $('segment-start').focus();
   });
-  /* the global Escape handler steps aside for form fields, so handle it here */
-  segmentModal.addEventListener('keydown', function(e){
-    if (e.key === 'Escape'){ e.stopPropagation(); closeSegmentModal(); }
+
+  $('segment-file-btn').addEventListener('click', function(){
+    closeNewSession();
+    chooseVideo(null);
   });
+
+  function openSessionsModal(){
+    sessionsModal.classList.add('open');
+    renderSessionTree();
+    setTimeout(function(){ $('session-filter').focus(); }, 30);
+  }
+  function closeSessionsModal(){ sessionsModal.classList.remove('open'); }
+  $('sessions-btn').addEventListener('click', openSessionsModal);
+  $('see-all-btn').addEventListener('click', openSessionsModal);
+  $('sessions-close').addEventListener('click', closeSessionsModal);
+  wireModal(sessionsModal, closeSessionsModal);
+
+  function closeSettings(){ settingsModal.classList.remove('open'); }
+  $('settings-btn').addEventListener('click', function(){ settingsModal.classList.add('open'); });
+  $('settings-close').addEventListener('click', closeSettings);
+  wireModal(settingsModal, closeSettings);
 
   $('segment-form').addEventListener('submit', function(e){
     e.preventDefault();
     var link = parseYouTube($('segment-url').value);
     if (!link){
-      segmentError('That does not look like a YouTube link.', 'segment-url');
+      segmentError('Paste a YouTube link, or choose a video file.', 'segment-url');
+      return;
+    }
+
+    /* the whole video: nothing more to read */
+    if (!segmentOn()){
+      closeNewSession();
+      var name = $('segment-name').value.trim();
+      if (openUrl($('segment-url').value)){
+        if (name) nameOpenSession(name);
+        clearNewSession();
+      }
       return;
     }
 
@@ -1668,16 +1819,26 @@
       return;
     }
 
-    var name = $('segment-name').value.trim();
-    closeSegmentModal();
-    loadYouTubeClip(link.videoId, start, end, name || null);
+    var segName = $('segment-name').value.trim();
+    closeNewSession();
+    loadYouTubeClip(link.videoId, start, end, segName || null);
     setNotice('Segment ' + fmt(start) + '-' + fmt(end) + '. Marks you make are timed from ' +
               'the start of the segment.', 9000);
-    $('segment-url').value = '';
-    $('segment-start').value = '';
-    $('segment-end').value = '';
-    $('segment-name').value = '';
+    clearNewSession();
   });
+
+  /* A name typed for a whole video cannot be handed to loadYouTubeVideo the way a clip's
+     can, so apply it to the entry once the session is registered. */
+  function nameOpenSession(name){
+    setTimeout(function(){
+      var e = entryFor(videoKey);
+      if (!e) return;
+      e.customName = name;
+      saveLibrary();
+      refreshName();
+      renderRecent();
+    }, 400);
+  }
 
   /* ---------- who is commenting ---------- */
   function refreshWho(){
@@ -2686,6 +2847,12 @@
 
   /* Show where the notes actually live, and let it be opened. Also surface what the
      first run did with them, since a silent migration of real work is unnerving. */
+  if (DESKTOP.version){
+    DESKTOP.version().then(function(v){
+      if (v) $('app-version').textContent = 'v' + v;
+    });
+  }
+
   if (DESKTOP.dataDir){
     DESKTOP.dataDir().then(function(info){
       if (!info) return;

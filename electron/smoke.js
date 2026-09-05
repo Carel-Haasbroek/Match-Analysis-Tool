@@ -66,7 +66,9 @@ app.whenReady().then(() => {
          a missing rule shows up as a working button that renders as unstyled soup.
          Assert the modal is actually laid out, not merely present in the DOM. */
       const modal = await win.webContents.executeJavaScript(`(function(){
-        document.getElementById('view-summary-btn').click();
+        /* the button is disabled with no session open - this checks the panel's
+           layout, not the button, so show it directly */
+        document.getElementById('summary-modal').classList.add('open');
         var panel = document.querySelector('.summary-modal-panel');
         var body  = document.querySelector('.summary-modal-body');
         var cs = getComputedStyle(panel), cb = getComputedStyle(body);

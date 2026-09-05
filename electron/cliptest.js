@@ -43,8 +43,9 @@ app.whenReady().then(() => {
 
       /* --- open the full video and cut a clip from it --- */
       await run(win, `
-        document.getElementById('url-input').value = ${JSON.stringify(VIDEO)};
-        document.getElementById('start-url-form').dispatchEvent(
+        document.getElementById('new-session-btn').click();
+        document.getElementById('segment-url').value = ${JSON.stringify(VIDEO)};
+        document.getElementById('segment-form').dispatchEvent(
           new Event('submit', { bubbles: true, cancelable: true }));
       `);
       await wait(9000);

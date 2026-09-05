@@ -27,6 +27,10 @@ function run(win, code){ return win.webContents.executeJavaScript(code); }
 /* fill the modal in and submit it */
 function fillAndSubmit(win, url, start, end, name){
   return run(win, `(function(){
+    /* the times only exist once you say you want part of the video */
+    var toggle = document.getElementById('segment-toggle');
+    toggle.checked = true;
+    toggle.dispatchEvent(new Event('change', { bubbles: true }));
     document.getElementById('segment-url').value = ${JSON.stringify(url)};
     document.getElementById('segment-start').value = ${JSON.stringify(start)};
     document.getElementById('segment-end').value = ${JSON.stringify(end)};
@@ -34,7 +38,7 @@ function fillAndSubmit(win, url, start, end, name){
     document.getElementById('segment-form')
       .dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
     return {
-      open: document.getElementById('segment-modal').classList.contains('open'),
+      open: document.getElementById('new-session-modal').classList.contains('open'),
       error: document.getElementById('segment-error').textContent
     };
   })()`);
@@ -69,18 +73,18 @@ app.whenReady().then(() => {
 
       /* ---------- the button and the modal ---------- */
       const home = await run(win, `({
-        button: !!document.getElementById('segment-btn'),
+        button: !!document.getElementById('new-session-btn'),
         onHome: !document.getElementById('home').classList.contains('hidden'),
-        modalOpen: document.getElementById('segment-modal').classList.contains('open')
+        modalOpen: document.getElementById('new-session-modal').classList.contains('open')
       })`);
-      check('the home screen offers a segment button', home.button && home.onHome,
+      check('the home screen offers a new-session button', home.button && home.onHome,
             JSON.stringify(home));
       check('the modal starts closed', !home.modalOpen, JSON.stringify(home));
 
-      await run(win, `document.getElementById('segment-btn').click()`);
+      await run(win, `document.getElementById('new-session-btn').click()`);
       await wait(400);
       const opened = await run(win, `({
-        open: document.getElementById('segment-modal').classList.contains('open'),
+        open: document.getElementById('new-session-modal').classList.contains('open'),
         fields: ['segment-url','segment-start','segment-end','segment-name']
                   .every(function(id){ return !!document.getElementById(id); })
       })`);
@@ -132,7 +136,7 @@ app.whenReady().then(() => {
       /* ---------- the same segment again is the same session ---------- */
       await run(win, `document.getElementById('recent-btn').click()`);
       await wait(600);
-      await run(win, `document.getElementById('segment-btn').click()`);
+      await run(win, `document.getElementById('new-session-btn').click()`);
       await wait(300);
       await fillAndSubmit(win, 'https://youtu.be/dQw4w9WgXcQ', '90', '240');
       await wait(2500);
@@ -143,7 +147,7 @@ app.whenReady().then(() => {
       /* ---------- an empty start falls back to the link's own moment ---------- */
       await run(win, `document.getElementById('recent-btn').click()`);
       await wait(600);
-      await run(win, `document.getElementById('segment-btn').click()`);
+      await run(win, `document.getElementById('new-session-btn').click()`);
       await wait(300);
       await fillAndSubmit(win, 'https://www.youtube.com/watch?v=abcdefghijk&t=45', '', '1:02:03');
       await wait(2500);
@@ -157,19 +161,19 @@ app.whenReady().then(() => {
       /* ---------- closing without making anything ---------- */
       await run(win, `document.getElementById('recent-btn').click()`);
       await wait(600);
-      await run(win, `document.getElementById('segment-btn').click()`);
+      await run(win, `document.getElementById('new-session-btn').click()`);
       await wait(300);
       await run(win, `document.getElementById('segment-cancel').click()`);
       await wait(300);
-      const cancelled = await run(win, `document.getElementById('segment-modal').classList.contains('open')`);
+      const cancelled = await run(win, `document.getElementById('new-session-modal').classList.contains('open')`);
       check('cancel closes the modal', !cancelled, String(cancelled));
 
-      await run(win, `document.getElementById('segment-btn').click()`);
+      await run(win, `document.getElementById('new-session-btn').click()`);
       await wait(300);
-      await run(win, `document.getElementById('segment-modal')
+      await run(win, `document.getElementById('new-session-modal')
         .dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))`);
       await wait(300);
-      const escaped = await run(win, `document.getElementById('segment-modal').classList.contains('open')`);
+      const escaped = await run(win, `document.getElementById('new-session-modal').classList.contains('open')`);
       check('escape closes the modal', !escaped, String(escaped));
 
       lib = await libraryState(win);

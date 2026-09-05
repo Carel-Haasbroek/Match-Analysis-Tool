@@ -11,18 +11,12 @@
   <header class="topbar">
     <h1>Video Notes</h1>
     <div class="sep"></div>
-    <button type="button" id="load-btn">Load video</button>
-    <form class="url-field" id="top-url-form">
-      <input type="text" id="top-url-input" placeholder="Paste a YouTube link" spellcheck="false" aria-label="YouTube link">
-      <button type="submit">Open</button>
-    </form>
+    <button type="button" id="sessions-btn">All sessions</button>
     <button type="button" id="recent-btn">Home</button>
-    <label class="switch" title="Pause playback automatically whenever a note's moment is reached">
-      <input type="checkbox" id="auto-pause">
-      <span class="switch-track" aria-hidden="true"><span class="switch-knob"></span></span>
-      <span class="switch-label">Pause at notes</span>
-    </label>
-    <button type="button" id="view-summary-btn">View summary</button>
+    <button type="button" class="icon-btn" id="settings-btn" title="Settings">
+      <svg viewBox="0 0 16 16" aria-hidden="true"><circle cx="8" cy="8" r="2.4"/><path d="M8 1.4v1.8M8 12.8v1.8M1.4 8h1.8M12.8 8h1.8M3.3 3.3l1.3 1.3M11.4 11.4l1.3 1.3M12.7 3.3l-1.3 1.3M4.6 11.4l-1.3 1.3"/></svg>
+      <span class="sr">Settings</span>
+    </button>
     <span class="file-name mono" id="file-name"></span>
     <span class="status" id="status"></span>
   </header>
@@ -30,61 +24,22 @@
 
   <main class="home" id="home">
     <div class="home-inner">
-      <section class="home-open">
-        <h3>Open a match</h3>
-        <form class="url-field big" id="start-url-form">
-          <input type="text" id="url-input" placeholder="https://www.youtube.com/watch?v=&hellip;" spellcheck="false" aria-label="YouTube link">
-          <button type="submit" class="primary">Open link</button>
-        </form>
-        <div class="url-extra">
-          <button type="button" id="segment-btn">Just a segment of a link&hellip;</button>
-        </div>
-        <div class="or">or</div>
-        <button type="button" id="empty-load-btn">Choose a video file</button>
-        <p class="home-hint">Your notes stay on this device &mdash; nothing is uploaded.</p>
-
-        <div class="who-block">
-          <h3>Who is commenting</h3>
-          <div class="who-row">
-            <span class="who-label">Signing notes as</span>
-            <strong class="who-name" id="who-name">not set yet</strong>
-            <button type="button" id="who-change">Change name</button>
-          </div>
-          <p class="backup-hint">Every comment you add is signed with this name, so several
-            coaches can comment on the same moment and you can tell who said what.</p>
-        </div>
-
-        <div class="theme-block">
-          <h3>Look</h3>
-          <div class="theme-row" id="theme-row"></div>
-        </div>
-
-        <div class="backup-block">
-          <h3>All notes</h3>
-          <div class="backup-row">
-            <button type="button" id="backup-btn">Export all notes</button>
-            <button type="button" id="restore-btn">Import backup</button>
-            <button type="button" id="open-clip-btn">Open shared clip</button>
-            <input type="file" id="restore-input" accept="application/json">
-            <input type="file" id="clip-input" accept="application/json">
-          </div>
-          <p class="backup-hint">One file holding every note, every summary and every session name.
-            Importing only ever adds notes back &mdash; it never overwrites or deletes.</p>
-        </div>
-      </section>
+      <div class="home-actions">
+        <button type="button" class="primary big-action" id="new-session-btn">+ New session</button>
+        <span class="grow"></span>
+        <button type="button" class="hidden" id="start-close">Back to the video</button>
+      </div>
 
       <section class="home-sessions">
         <header class="home-sessions-head">
-          <h3>Sessions</h3>
-          <span class="notes-folder mono hidden" id="notes-folder"
-                title="Where your notes are kept - click to open it"></span>
-          <input type="search" id="session-filter" placeholder="Filter sessions" aria-label="Filter sessions">
+          <h3>Recent</h3>
           <span class="grow"></span>
-          <button type="button" class="hidden" id="start-close">Back to the video</button>
+          <button type="button" class="link-btn hidden" id="see-all-btn"></button>
         </header>
         <div class="recent-list" id="recent-list"></div>
       </section>
     </div>
+    <span class="app-version mono" id="app-version"></span>
   </main>
 
   <div class="workspace">
@@ -166,11 +121,17 @@
           <button type="button" id="clip-reset-btn" title="Clear the marks">&#10005;</button>
         </div>
         <span class="grow"></span>
+        <label class="switch" title="Pause playback automatically whenever a note's moment is reached">
+          <input type="checkbox" id="auto-pause">
+          <span class="switch-track" aria-hidden="true"><span class="switch-knob"></span></span>
+          <span class="switch-label">Pause at notes</span>
+        </label>
         <label class="hold-control" title="How long a drawing stays on screen once playback reaches it">
           <span class="label">Hold</span>
           <input type="range" id="hold-range" min="0.01" max="2" step="0.01" value="1" aria-label="Drawing hold time">
           <span class="hold-value mono" id="hold-value">1.00s</span>
         </label>
+        <button type="button" id="view-summary-btn" disabled>View summary</button>
         <button id="mark-btn" class="primary" disabled>Mark this moment</button>
       </div>
 
@@ -286,19 +247,21 @@
   </div>
 </div>
 
-<div class="lightbox" id="segment-modal">
+<div class="lightbox" id="new-session-modal">
   <div class="segment-panel">
-    <h2>A segment of a YouTube video</h2>
-    <p class="name-hint">Marks and drawings are kept against the segment's own clock, so
-      0:00 is where it starts. Making the same segment twice reopens the session you
-      already have, notes and all.</p>
+    <h2>New session</h2>
     <form class="segment-form" id="segment-form">
       <label class="seg-row">
-        <span class="seg-label">Link</span>
+        <span class="seg-label">YouTube link</span>
         <input type="text" id="segment-url" spellcheck="false"
                placeholder="https://www.youtube.com/watch?v=&hellip;">
       </label>
-      <div class="seg-times">
+
+      <label class="seg-check">
+        <input type="checkbox" id="segment-toggle">
+        <span>Only part of this video</span>
+      </label>
+      <div class="seg-times hidden" id="segment-times">
         <label class="seg-row">
           <span class="seg-label">Start</span>
           <input type="text" id="segment-start" spellcheck="false" placeholder="1:30">
@@ -308,9 +271,11 @@
           <input type="text" id="segment-end" spellcheck="false" placeholder="4:00">
         </label>
       </div>
-      <p class="seg-hint">Times as <code>1:30</code>, <code>1:02:03</code> or a number of
-        seconds. Leave the start empty to begin at the beginning &mdash; or at whatever
-        moment the link itself points to.</p>
+      <p class="seg-hint hidden" id="segment-hint">Times as <code>1:30</code>,
+        <code>1:02:03</code> or a number of seconds. Marks are kept against the segment's own
+        clock, so 0:00 is where it starts. Leave the start empty to begin at whatever moment
+        the link points to.</p>
+
       <label class="seg-row">
         <span class="seg-label">Name <em>optional</em></span>
         <input type="text" id="segment-name" maxlength="80"
@@ -318,10 +283,69 @@
       </label>
       <div class="seg-error" id="segment-error" role="alert"></div>
       <div class="seg-actions">
+        <button type="button" id="segment-file-btn">Choose a video file&hellip;</button>
+        <span class="grow"></span>
         <button type="button" id="segment-cancel">Cancel</button>
-        <button type="submit" class="primary">Make the session</button>
+        <button type="submit" class="primary">Open</button>
       </div>
     </form>
+    <p class="seg-hint">Your notes stay on this device &mdash; nothing is uploaded.</p>
+  </div>
+</div>
+
+<div class="lightbox" id="sessions-modal">
+  <div class="sessions-panel">
+    <header class="sessions-head">
+      <h2>All sessions</h2>
+      <input type="search" id="session-filter" placeholder="Search sessions and folders"
+             aria-label="Search sessions">
+      <span class="grow"></span>
+      <button type="button" id="sessions-close">Close</button>
+    </header>
+    <div class="sessions-tree" id="sessions-tree"></div>
+    <footer class="sessions-foot">
+      <span class="notes-folder mono hidden" id="notes-folder"
+            title="Where your notes are kept - click to open it"></span>
+    </footer>
+  </div>
+</div>
+
+<div class="lightbox" id="settings-modal">
+  <div class="segment-panel">
+    <h2>Settings</h2>
+
+    <div class="who-block">
+      <h3>Who is commenting</h3>
+      <div class="who-row">
+        <span class="who-label">Signing notes as</span>
+        <strong class="who-name" id="who-name">not set yet</strong>
+        <button type="button" id="who-change">Change name</button>
+      </div>
+      <p class="backup-hint">Every comment you add is signed with this name, so several
+        coaches can comment on the same moment and you can tell who said what.</p>
+    </div>
+
+    <div class="theme-block">
+      <h3>Look</h3>
+      <div class="theme-row" id="theme-row"></div>
+    </div>
+
+    <div class="backup-block">
+      <h3>All notes</h3>
+      <div class="backup-row">
+        <button type="button" id="backup-btn">Export all notes</button>
+        <button type="button" id="restore-btn">Import backup</button>
+        <button type="button" id="open-clip-btn">Open shared clip</button>
+        <input type="file" id="restore-input" accept="application/json">
+        <input type="file" id="clip-input" accept="application/json">
+      </div>
+      <p class="backup-hint">One file holding every note, every summary and every session name.
+        Importing only ever adds notes back &mdash; it never overwrites or deletes.</p>
+    </div>
+
+    <div class="seg-actions">
+      <button type="button" id="settings-close">Close</button>
+    </div>
   </div>
 </div>
 

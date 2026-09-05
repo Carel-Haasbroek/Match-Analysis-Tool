@@ -67,9 +67,13 @@ app.whenReady().then(() => {
       await run(win, `location.reload()`);
       await wait(2500);
 
+      /* folders, searching and moving all live behind All sessions now */
+      await run(win, `document.getElementById('sessions-btn').click()`);
+      await wait(600);
+
       const listed = await run(win, `({
-        rows: document.querySelectorAll('.recent-row').length,
-        selects: document.querySelectorAll('.recent-folder').length,
+        rows: document.querySelectorAll('#sessions-tree .recent-row').length,
+        selects: document.querySelectorAll('#sessions-tree .recent-folder').length,
         folderShown: !document.getElementById('notes-folder').classList.contains('hidden'),
         folderText: document.getElementById('notes-folder').textContent
       })`);
@@ -80,7 +84,7 @@ app.whenReady().then(() => {
 
       /* put two of them in folders, one nested */
       await run(win, `(function(){
-        var rows = [].slice.call(document.querySelectorAll('.recent-row'));
+        var rows = [].slice.call(document.querySelectorAll('#sessions-tree .recent-row'));
         function byName(n){ return rows.filter(function(r){
           return r.querySelector('.recent-label').textContent === n; })[0]; }
         var r1 = byName('Jack round 1');
@@ -91,7 +95,7 @@ app.whenReady().then(() => {
       })()`);
       await wait(1200);
       await run(win, `(function(){
-        var rows = [].slice.call(document.querySelectorAll('.recent-row'));
+        var rows = [].slice.call(document.querySelectorAll('#sessions-tree .recent-row'));
         function byName(n){ return rows.filter(function(r){
           return r.querySelector('.recent-label').textContent === n; })[0]; }
         var s2 = byName('Jack round 2').querySelector('.recent-folder');
@@ -102,14 +106,15 @@ app.whenReady().then(() => {
       await wait(1500);
 
       const grouped = await run(win, `({
-        headers: [].slice.call(document.querySelectorAll('.recent-group'))
-                   .map(function(h){ return h.firstChild.textContent; }),
-        rows: document.querySelectorAll('.recent-row').length
+        headers: [].slice.call(document.querySelectorAll('#sessions-tree .tree-name'))
+                   .map(function(h){ return h.textContent; }),
+        loose: !!document.querySelector('#sessions-tree .tree-folder.loose'),
+        rows: document.querySelectorAll('#sessions-tree .recent-row').length
       })`);
-      check('the list groups under folder headings',
+      check('the tree draws the folders, nested ones as their own level',
             grouped.headers.indexOf('Competition 2026') >= 0 &&
-            grouped.headers.indexOf('Competition 2026/Nationals') >= 0 &&
-            grouped.headers.indexOf('Not in a folder') >= 0, JSON.stringify(grouped));
+            grouped.headers.indexOf('Nationals') >= 0 &&
+            grouped.loose, JSON.stringify(grouped));
       check('no session is lost when grouped', grouped.rows === 3, String(grouped.rows));
 
       /* the actual point: the app's folders are the folders on disk */
@@ -128,18 +133,20 @@ app.whenReady().then(() => {
       /* and it all survives a restart */
       await run(win, `location.reload()`);
       await wait(2500);
+      await run(win, `document.getElementById('sessions-btn').click()`);
+      await wait(600);
       const after = await run(win, `({
-        headers: [].slice.call(document.querySelectorAll('.recent-group'))
-                   .map(function(h){ return h.firstChild.textContent; }),
-        rows: document.querySelectorAll('.recent-row').length
+        headers: [].slice.call(document.querySelectorAll('#sessions-tree .tree-name'))
+                   .map(function(h){ return h.textContent; }),
+        rows: document.querySelectorAll('#sessions-tree .recent-row').length
       })`);
       check('grouping survives a restart',
-            after.headers.indexOf('Competition 2026/Nationals') >= 0 && after.rows === 3,
+            after.headers.indexOf('Nationals') >= 0 && after.rows === 3,
             JSON.stringify(after));
 
       /* moving one back out again */
       await run(win, `(function(){
-        var rows = [].slice.call(document.querySelectorAll('.recent-row'));
+        var rows = [].slice.call(document.querySelectorAll('#sessions-tree .recent-row'));
         function byName(n){ return rows.filter(function(r){
           return r.querySelector('.recent-label').textContent === n; })[0]; }
         var s = byName('Jack round 1').querySelector('.recent-folder');

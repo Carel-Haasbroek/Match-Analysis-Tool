@@ -52,6 +52,11 @@ ipcMain.handle('store:keys', () => store.keys());
 ipcMain.handle('app:dataDir', () => ({
   dir: dataDir.dir, kind: dataDir.kind, migration: migration
 }));
+/* Read from package.json rather than app.getVersion(): that reports Electron's own
+   version when main.js is launched as a script, which is how every test runs. */
+const APP_VERSION = require('../package.json').version;
+ipcMain.handle('app:version', () => APP_VERSION);
+
 ipcMain.handle('app:reveal', (e, target) => {
   shell.openPath(target || dataDir.dir);
   return true;

@@ -19,6 +19,7 @@ contextBridge.exposeInMainWorld('desktop', {
   openVideo: () => ipcRenderer.invoke('video:open'),
   statVideo: (filePath) => ipcRenderer.invoke('video:stat', filePath),
   dataDir: () => ipcRenderer.invoke('app:dataDir'),
+  version: () => ipcRenderer.invoke('app:version'),
   reveal: (target) => ipcRenderer.invoke('app:reveal', target),
   moveSession: (key, groupPath) => ipcRenderer.invoke('session:move', key, groupPath)
 });
