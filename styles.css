@@ -152,6 +152,8 @@ input[type=file]{ display:none; }
   backdrop-filter:blur(3px); -webkit-backdrop-filter:blur(3px);
   text-align:center;
   transition:transform .22s ease, opacity .22s ease; }
+.note-view-body{ display:flex; flex-direction:column; justify-content:center; gap:3px;
+  flex:1; min-height:0; }
 .note-view.hidden{ display:none; }
 .note-view.collapsed{ transform:translateY(100%); opacity:0; pointer-events:none; }
 /* A tight dark halo plus a wider soft drop: the halo is what keeps text legible over a
@@ -162,6 +164,9 @@ input[type=file]{ display:none; }
   overflow-y:auto;
   text-shadow:0 0 3px rgba(0,0,0,.95), 0 1px 3px rgba(0,0,0,.9), 0 2px 10px rgba(0,0,0,.75); }
 .note-view-text.muted{ color:var(--text-dim); font-style:italic; }
+.note-view-text{ min-height:0; }
+.nv-cmt{ margin-top:2px; }
+.nv-who{ color:var(--accent-2); font-weight:700; font-size:.85em; margin-right:8px; }
 
 /* the chevron rides on the panel's top edge and stays put when it collapses */
 .note-view-toggle{ position:absolute; top:-13px; left:50%; transform:translateX(-50%);
@@ -352,6 +357,29 @@ input[type=file]{ display:none; }
   text-shadow:0 0 10px rgba(255,77,157,.5); }
 .note-text{ color:var(--text-dim); font-size:.82rem; line-height:1.4; margin-top:3px;
   display:-webkit-box; -webkit-line-clamp:3; -webkit-box-orient:vertical; overflow:hidden; }
+.note-text.muted{ font-style:italic; }
+
+/* one comment in a moment's thread */
+.cmt{ display:flex; gap:6px; align-items:baseline; margin-top:4px; }
+.cmt-author{ color:var(--accent-2); font-size:.72rem; font-weight:700; flex-shrink:0;
+  letter-spacing:.02em; }
+.cmt-text{ flex:1; min-width:0; color:var(--text-dim); font-size:.82rem; line-height:1.4;
+  overflow-wrap:anywhere; }
+/* the delete cross stays out of the way until the moment is hovered */
+.cmt-del{ background:transparent; border:none; color:transparent; flex-shrink:0;
+  padding:0 3px; font-size:.7rem; line-height:1; }
+.note-item:hover .cmt-del{ color:var(--text-dim); }
+.cmt-del:hover{ color:var(--danger); background:transparent; box-shadow:none; }
+
+.cmt-add{ display:flex; gap:6px; margin-top:6px; }
+.cmt-input{ flex:1; min-width:0; background:var(--field); border:1px solid var(--border);
+  border-radius:5px; color:var(--text); font-family:inherit; font-size:.78rem;
+  padding:4px 7px; }
+.cmt-input::placeholder{ color:var(--text-dim); opacity:.7; }
+/* Post appears once there is something to post; Enter works either way */
+.cmt-post{ display:none; padding:4px 9px; font-size:.74rem; }
+.cmt-add.ready .cmt-post{ display:inline-block; }
+
 .note-del{ background:transparent; border:none; color:var(--text-dim); padding:3px 6px; }
 .note-del:hover{ color:var(--danger); box-shadow:none; }
 
@@ -400,7 +428,25 @@ input[type=file]{ display:none; }
   box-shadow:0 0 0 1px rgba(255,77,157,.18), 0 18px 60px rgba(0,0,0,.7); }
 .lightbox-panel img{ width:100%; border-radius:6px; display:block; background:#000; }
 .lightbox-text{ font-size:.92rem; line-height:1.55; margin-top:10px; white-space:pre-wrap; }
+.lb-cmt{ margin-top:6px; }
 .lightbox-actions{ display:flex; gap:8px; margin-top:14px; justify-content:flex-end; flex-wrap:wrap; }
+
+/* ---------- who is commenting ---------- */
+.who-block{ width:100%; margin-top:14px; padding-top:12px;
+  border-top:1px solid var(--border); }
+.who-row{ display:flex; align-items:center; gap:9px; flex-wrap:wrap; }
+.who-label{ color:var(--text-dim); font-size:.8rem; }
+.who-name{ color:var(--accent); font-size:.95rem; }
+
+.name-panel{ background:var(--panel); border:1px solid var(--border);
+  border-radius:var(--radius); width:100%; max-width:460px; padding:20px;
+  box-shadow:0 0 0 1px rgba(255,77,157,.18), 0 18px 60px rgba(0,0,0,.7); }
+.name-panel h2{ font-size:1.05rem; margin:0 0 8px; }
+.name-hint{ color:var(--text-dim); font-size:.82rem; line-height:1.55; margin:0 0 14px; }
+.name-form{ display:flex; gap:8px; flex-wrap:wrap; }
+.name-form input{ flex:1; min-width:180px; background:var(--field);
+  border:1px solid var(--border); border-radius:6px; color:var(--text);
+  font-family:inherit; font-size:.9rem; padding:8px 10px; }
 
 @media (max-width:880px){
   .workspace{ flex-direction:column; overflow-y:auto; }

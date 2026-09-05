@@ -120,6 +120,18 @@ scrolls to keep it in view. Click any note to jump there. The **Summary** tab ho
 rundown of every note plus your own written thoughts on the match, and **View summary**
 opens both side by side.
 
+**Several coaches on one video** — the first time you open the app it asks for your name,
+and everything you write is signed with it. Every marked moment holds a thread rather than a
+single line: the box under a moment in the notes panel adds another comment, so two coaches
+can disagree about the same tackle and you can see who said what. Change your name from
+**Who is commenting** on the home screen; comments already saved keep the name they were
+written under. Notes made before this existed are signed with the name you give at that
+first prompt.
+
+Send a coach your **Export all notes** file and have them import it: threads are merged
+comment by comment, so their remarks land alongside yours instead of replacing them, and
+importing the same file twice changes nothing.
+
 **Sessions** — each video you open becomes a session on the home screen, with its notes,
 summary and name. Rename one with the pencil that appears when you hover it; the video
 itself is remembered, so clicking a session reopens it. If the file has moved, the session
@@ -131,7 +143,8 @@ says so and offers to point at its new location — your notes reattach either w
 
 ```bash
 npm test                          # store and byte-range streaming, headless
-npx electron electron/smoke.js    # launches the real window and checks it
+npx electron electron/smoke.js       # launches the real window and checks it
+npx electron electron/commenttest.js # names, threads and merging, in the real window
 npm run icon                      # regenerates build/icon.ico from build/make-icon.js
 ```
 

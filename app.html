@@ -50,6 +50,17 @@
           with any static server. Local video files work fine either way.
         </div>
 
+        <div class="who-block">
+          <h3>Who is commenting</h3>
+          <div class="who-row">
+            <span class="who-label">Signing notes as</span>
+            <strong class="who-name" id="who-name">not set yet</strong>
+            <button type="button" id="who-change">Change name</button>
+          </div>
+          <p class="backup-hint">Every comment you add is signed with this name, so several
+            coaches can comment on the same moment and you can tell who said what.</p>
+        </div>
+
         <div class="theme-block">
           <h3>Look</h3>
           <div class="theme-row" id="theme-row"></div>
@@ -279,6 +290,19 @@
         <div class="summary-status" id="summary-modal-status"></div>
       </section>
     </div>
+  </div>
+</div>
+
+<div class="lightbox" id="name-modal">
+  <div class="name-panel">
+    <h2 id="name-title">Who is commenting?</h2>
+    <p class="name-hint" id="name-hint"></p>
+    <form class="name-form" id="name-form">
+      <input type="text" id="name-input" maxlength="40" placeholder="Your name"
+             spellcheck="false" autocomplete="name" aria-label="Your name">
+      <button type="submit" class="primary">Save</button>
+      <button type="button" id="name-cancel">Cancel</button>
+    </form>
   </div>
 </div>
 

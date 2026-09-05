@@ -38,6 +38,16 @@
   var hudIdleTimer = null;
   var activePane = 'notes';
 
+  /* Who is commenting. Asked for at first startup and put on every note this person
+     adds, so several coaches can annotate one video and stay distinguishable. */
+  var userName = '';
+  /* The name that notes written before authorship existed are read as. Captured once,
+     when a name is first entered, and never changed afterwards: renaming yourself later
+     must not rewrite who wrote the old ones. */
+  var legacyAuthor = '';
+  /* The note whose comment box should regain focus after a re-render. */
+  var focusNoteId = null;
+
   var LIB_KEY = 'vnotes:index', LIB_MAX = 40;
 
   /* name, label, and the three colours the swatch shows */
@@ -862,6 +872,9 @@
     });
   }
 
+  /* sentinel for the 'New folder...' entry in the folder chooser */
+  var NEW_FOLDER_OPTION = '__new_folder__';
+
   function folderOf(entry){ return (entry && entry.folder) ? String(entry.folder) : ''; }
 
   function allFolders(){
@@ -1024,13 +1037,13 @@
       opt('', 'No folder');
       allFolders().forEach(function(f){ if (f) opt(f, f); });
       var mk = document.createElement('option');
-      mk.value = ' new'; mk.textContent = 'New folder…';
+      mk.value = NEW_FOLDER_OPTION; mk.textContent = 'New folder…';
       move.appendChild(mk);
       move.addEventListener('click', function(e){ e.stopPropagation(); });
       move.addEventListener('change', function(e){
         e.stopPropagation();
         var v = move.value;
-        if (v === ' new'){
+        if (v === NEW_FOLDER_OPTION){
           v = (prompt('Folder name (use / to nest)', folderOf(entry)) || '').trim();
           if (!v){ renderRecent(); return; }
         }
@@ -1267,7 +1280,9 @@
       notePanelOpen: notePanelOpen,
       volume: volume,
       muted: muted,
-      theme: theme
+      theme: theme,
+      userName: userName,
+      legacyAuthor: legacyAuthor
     });
   }
 
@@ -1297,6 +1312,11 @@
       muted = !!p.muted;
       applySound();
       applyTheme(typeof p.theme === 'string' ? p.theme : '', false);
+      userName = typeof p.userName === 'string' ? p.userName : '';
+      legacyAuthor = typeof p.legacyAuthor === 'string' ? p.legacyAuthor : '';
+      refreshWho();
+      renderNotes();
+      if (!userName) askName(true);
     });
   }
 
@@ -1318,10 +1338,14 @@
   $('clear-btn').addEventListener('click', function(){ shapes = []; redraw(); });
 
   $('save-btn').addEventListener('click', function(){
+    var first = noteTextInput.value.trim();
     var note = {
-      id: Date.now() + '-' + Math.random().toString(36).slice(2,7),
+      id: uid(),
       time: capturedTime,
-      text: noteTextInput.value.trim()
+      /* text mirrors the first comment; comments is the thread coaches add to */
+      text: first,
+      author: first ? userName : '',
+      comments: first ? [{ id: uid(), author: userName, text: first, at: Date.now() }] : []
     };
     /* Shapes are recorded for every source, so any note can be replayed over live
        video. `image` keeps its old meaning: the thumbnail and lightbox still read it. */
@@ -1484,6 +1508,193 @@
     hideOverlay();
   }
 
+  /* ---------- comments ---------- */
+  /* A moment holds a thread, not one line of text. Notes written before this existed
+     have `text` and no `comments`; they are read as a single comment signed with the
+     name captured at first startup, and only materialise into a real `comments` array
+     when someone adds to them. Nothing is rewritten on load, so opening the app never
+     touches an existing note. `text` is kept in step with the first comment, so
+     exports, tooltips, the folder store and older builds all keep working. */
+
+  function uid(){ return Date.now() + '-' + Math.random().toString(36).slice(2,7); }
+
+  function commentsOf(note){
+    if (Array.isArray(note.comments) && note.comments.length) return note.comments;
+    var t = (note.text || '').trim();
+    if (!t) return [];
+    return [{ id: note.id + ':1', author: note.author || legacyAuthor || '',
+              text: t, at: note.at || 0 }];
+  }
+
+  function authorOf(c){ return ((c && c.author) || '').trim(); }
+
+  /* one line per comment, for the places with room for only a line */
+  function noteLines(note){
+    return commentsOf(note).map(function(c){
+      var who = authorOf(c);
+      return who ? who + ': ' + c.text : c.text;
+    });
+  }
+  function noteSummaryText(note){ return noteLines(note).join('  ·  '); }
+
+  function addComment(note, text){
+    text = (text || '').trim();
+    if (!text) return false;
+    var list = commentsOf(note).slice();
+    list.push({ id: uid(), author: userName, text: text, at: Date.now() });
+    note.comments = list;
+    note.text = list[0].text;
+    if (!note.author) note.author = authorOf(list[0]);
+    return true;
+  }
+
+  function deleteComment(note, commentId){
+    var list = commentsOf(note).filter(function(c){ return c.id !== commentId; });
+    note.comments = list;
+    note.text = list.length ? list[0].text : '';
+    note.author = list.length ? authorOf(list[0]) : '';
+  }
+
+  /* Two coaches can each hold the same note and add to it, so merging matches on note
+     id and then unions the two threads by comment id. Nothing is ever replaced. */
+  function mergeNoteLists(existing, incoming){
+    var out = Array.isArray(existing) ? existing.slice() : [];
+    var byId = {}, addedNotes = 0, addedComments = 0;
+    out.forEach(function(n){ byId[n.id] = n; });
+    (incoming || []).forEach(function(n){
+      if (!n || typeof n.id === 'undefined') return;
+      var have = byId[n.id];
+      if (!have){ out.push(n); byId[n.id] = n; addedNotes++; return; }
+      var mine = commentsOf(have), merged = mine.slice(), seen = {};
+      mine.forEach(function(c){ seen[c.id] = true; });
+      commentsOf(n).forEach(function(c){
+        if (!seen[c.id]){ merged.push(c); seen[c.id] = true; addedComments++; }
+      });
+      if (merged.length !== mine.length){
+        have.comments = merged;
+        have.text = merged[0].text;
+      }
+    });
+    out.sort(function(a,b){ return a.time - b.time; });
+    return { notes: out, addedNotes: addedNotes, addedComments: addedComments };
+  }
+
+  function countLabel(n, one, many){ return n + ' ' + (n === 1 ? one : many); }
+
+  /* one comment in the notes list, with the author it belongs to */
+  function commentRow(note, c){
+    var row = document.createElement('div');
+    row.className = 'cmt';
+    var who = authorOf(c);
+    if (who){
+      var a = document.createElement('span');
+      a.className = 'cmt-author';
+      a.textContent = who;
+      row.appendChild(a);
+    }
+    var tx = document.createElement('span');
+    tx.className = 'cmt-text';
+    tx.textContent = c.text;
+    row.appendChild(tx);
+
+    var del = document.createElement('button');
+    del.type = 'button';
+    del.className = 'cmt-del';
+    del.textContent = '✕';
+    del.title = 'Delete this comment';
+    del.addEventListener('click', function(e){
+      e.stopPropagation();
+      if (!confirm('Delete this comment?')) return;
+      deleteComment(note, c.id);
+      afterThreadChange(note);
+    });
+    row.appendChild(del);
+    return row;
+  }
+
+  function commentComposer(note){
+    var wrap = document.createElement('div');
+    wrap.className = 'cmt-add';
+    var input = document.createElement('input');
+    input.type = 'text';
+    input.className = 'cmt-input';
+    input.placeholder = userName ? 'Add a comment as ' + userName + '…' : 'Add a comment…';
+    input.setAttribute('data-note-id', note.id);
+    var post = document.createElement('button');
+    post.type = 'button';
+    post.className = 'cmt-post';
+    post.textContent = 'Post';
+
+    function submit(){
+      if (!addComment(note, input.value)) return;
+      input.value = '';
+      focusNoteId = note.id;
+      afterThreadChange(note);
+    }
+    /* clicking the row jumps the video, which must not happen while typing */
+    wrap.addEventListener('click', function(e){ e.stopPropagation(); });
+    input.addEventListener('input', function(){
+      wrap.classList.toggle('ready', !!input.value.trim());
+    });
+    input.addEventListener('keydown', function(e){
+      if (e.key === 'Enter'){ e.preventDefault(); submit(); }
+    });
+    post.addEventListener('click', submit);
+    wrap.appendChild(input);
+    wrap.appendChild(post);
+    return wrap;
+  }
+
+  /* one path for every edit to a thread: save, then redraw wherever it shows */
+  function afterThreadChange(note){
+    persist();
+    renderNotes();
+    renderMarks();
+    if (panelNoteId === note.id){
+      panelNoteId = null;
+      syncNotePanel(player ? player.getTime() : 0);
+    }
+    if (lightboxNote && lightboxNote.id === note.id) openLightbox(note);
+    if (summaryModal.classList.contains('open')) renderSummaryModalList();
+  }
+
+  /* ---------- who is commenting ---------- */
+  function refreshWho(){
+    var el = $('who-name');
+    if (el) el.textContent = userName || 'not set yet';
+  }
+
+  function askName(first){
+    var input = $('name-input');
+    $('name-title').textContent = first ? 'Who is commenting?' : 'Change your name';
+    $('name-hint').textContent = first
+      ? 'Your name goes on every note you add, so several coaches can comment on the same video. Notes already saved on this machine are signed with this name too.'
+      : 'New comments are signed with this name. Comments already saved keep the name they were saved under.';
+    $('name-cancel').classList.toggle('hidden', !!first);
+    input.value = userName;
+    $('name-modal').classList.add('open');
+    setTimeout(function(){ input.focus(); input.select(); }, 30);
+  }
+
+  $('name-form').addEventListener('submit', function(e){
+    e.preventDefault();
+    var v = $('name-input').value.trim().slice(0, 40);
+    if (!v){ $('name-input').focus(); return; }
+    var firstTime = !userName;
+    userName = v;
+    /* Notes that predate authorship become this person's, once. */
+    if (!legacyAuthor) legacyAuthor = v;
+    savePrefs();
+    $('name-modal').classList.remove('open');
+    refreshWho();
+    renderNotes();
+    if (firstTime) setNotice('Notes you add are signed ' + v + '.');
+  });
+  $('name-cancel').addEventListener('click', function(){
+    $('name-modal').classList.remove('open');
+  });
+  $('who-change').addEventListener('click', function(){ askName(false); });
+
   /* ---------- notes list ---------- */
   function renderNotes(){
     notesList.innerHTML = '';
@@ -1516,12 +1727,16 @@
       t.className = 'note-time mono';
       t.textContent = fmt(note.time);
       body.appendChild(t);
-      if (note.text){
-        var tx = document.createElement('div');
-        tx.className = 'note-text';
-        tx.textContent = note.text;
-        body.appendChild(tx);
+
+      var thread = commentsOf(note);
+      if (!thread.length){
+        var none = document.createElement('div');
+        none.className = 'note-text muted';
+        none.textContent = 'Drawing only';
+        body.appendChild(none);
       }
+      thread.forEach(function(c){ body.appendChild(commentRow(note, c)); });
+      body.appendChild(commentComposer(note));
 
       var del = document.createElement('button');
       del.className = 'note-del';
@@ -1533,6 +1748,13 @@
       item.addEventListener('click', function(){ jumpTo(note.time, note); });
       notesList.appendChild(item);
     });
+
+    /* posting re-renders the list, so put the cursor back where it was */
+    if (focusNoteId){
+      var back = notesList.querySelector('.cmt-input[data-note-id="' + focusNoteId + '"]');
+      focusNoteId = null;
+      if (back) back.focus();
+    }
   }
 
   function renderMarks(){
@@ -1552,7 +1774,8 @@
       var m = document.createElement('div');
       m.className = 'mark';
       m.style.left = ((note.time / d) * 100) + '%';
-      m.title = fmt(note.time) + (note.text ? ' — ' + note.text : '');
+      var line = noteSummaryText(note);
+      m.title = fmt(note.time) + (line ? ' — ' + line : '');
       m.addEventListener('click', function(){ jumpTo(note.time, note); });
       markStrip.appendChild(m);
     });
@@ -1633,8 +1856,17 @@
         var data = JSON.parse(reader.result);
         var incoming = Array.isArray(data) ? data : data.notes;
         if (!Array.isArray(incoming)) throw new Error('bad format');
-        notes = notes.concat(incoming).sort(function(a,b){ return a.time - b.time; });
+        var res = mergeNoteLists(notes, incoming);
+        notes = res.notes;
         persist(); renderNotes(); renderMarks();
+        if (res.addedNotes || res.addedComments){
+          var bits = [];
+          if (res.addedNotes) bits.push(countLabel(res.addedNotes, 'note', 'notes'));
+          if (res.addedComments) bits.push(countLabel(res.addedComments, 'comment', 'comments'));
+          setNotice('Added ' + bits.join(' and ') + '.');
+        } else {
+          setNotice('Everything in that file was already here.');
+        }
         /* only fill an empty summary — never clobber thoughts already written */
         if (typeof data.summary === 'string' && data.summary.trim() && !summaryText.value.trim()){
           summaryText.value = data.summary;
@@ -1720,8 +1952,28 @@
        Not saved to prefs — only an explicit chevron click records a preference. */
     if (!notePanelOpen) applyNotePanelOpen(true, false);
     noteViewTime.textContent = fmt(n.time);
-    noteViewText.textContent = n.text || 'Drawing only';
-    noteViewText.classList.toggle('muted', !n.text);
+    var thread = commentsOf(n);
+    noteViewText.innerHTML = '';
+    noteViewText.classList.toggle('muted', !thread.length);
+    if (!thread.length){
+      noteViewText.textContent = 'Drawing only';
+    } else {
+      /* every comment, scrolled within the strip when there are more than fit */
+      thread.forEach(function(c){
+        var line = document.createElement('div');
+        line.className = 'nv-cmt';
+        var who = authorOf(c);
+        if (who){
+          var a = document.createElement('span');
+          a.className = 'nv-who';
+          a.textContent = who;
+          line.appendChild(a);
+        }
+        line.appendChild(document.createTextNode(c.text));
+        noteViewText.appendChild(line);
+      });
+      noteViewText.scrollTop = 0;
+    }
   }
 
   function applyNotePanelOpen(open, save){
@@ -2107,9 +2359,15 @@
       var mt = document.createElement('div');
       mt.className = 'mt';
       mt.textContent = fmt(note.time);
+      var lines = noteLines(note);
       var mx = document.createElement('div');
-      mx.className = 'mx' + (note.text ? '' : ' muted');
-      mx.textContent = note.text || 'Drawing only';
+      mx.className = 'mx' + (lines.length ? '' : ' muted');
+      if (!lines.length) mx.textContent = 'Drawing only';
+      else lines.forEach(function(l){
+        var d = document.createElement('div');
+        d.textContent = l;
+        mx.appendChild(d);
+      });
       m.appendChild(mt); m.appendChild(mx);
       row.appendChild(m);
 
@@ -2204,9 +2462,15 @@
       t.className = 't';
       t.textContent = fmt(note.time);
 
+      var lines = noteLines(note);
       var s = document.createElement('span');
-      s.className = 's' + (note.text ? '' : ' muted');
-      s.textContent = note.text || 'Drawing only';
+      s.className = 's' + (lines.length ? '' : ' muted');
+      if (!lines.length) s.textContent = 'Drawing only';
+      else lines.forEach(function(l){
+        var d = document.createElement('div');
+        d.textContent = l;
+        s.appendChild(d);
+      });
 
       row.appendChild(t); row.appendChild(s);
       row.addEventListener('click', function(){ jumpTo(note.time, note); });
@@ -2306,24 +2570,18 @@
 
   function restoreBackup(data){
     var keys = Object.keys(data.videos || {});
-    var added = 0, touched = 0, summaryAdded = 0, summaryKept = 0;
+    var added = 0, touched = 0, summaryAdded = 0, summaryKept = 0, commentsAdded = 0;
 
     var work = keys.map(function(k){
       var incoming = data.videos[k];
       if (!isNoteList(incoming)) return Promise.resolve();
       return store.get(k).then(function(existing){
-        var merged = Array.isArray(existing) ? existing.slice() : [];
-        var seen = {};
-        merged.forEach(function(n){ seen[n.id] = true; });
-        var before = merged.length;
-        incoming.forEach(function(n){
-          if (!seen[n.id]){ merged.push(n); seen[n.id] = true; }
-        });
-        if (merged.length === before) return;
-        merged.sort(function(a,b){ return a.time - b.time; });
-        added += merged.length - before;
+        var res = mergeNoteLists(existing, incoming);
+        if (!res.addedNotes && !res.addedComments) return;
+        added += res.addedNotes;
+        commentsAdded += res.addedComments;
         touched++;
-        return store.set(k, merged);
+        return store.set(k, res.notes);
       });
     });
 
@@ -2347,6 +2605,9 @@
       var bits = [];
       if (added) bits.push('Restored ' + added + ' note' + (added === 1 ? '' : 's') +
                            ' across ' + touched + ' video' + (touched === 1 ? '' : 's'));
+      if (commentsAdded) bits.push((bits.length ? 'and ' : 'Restored ') +
+                                   countLabel(commentsAdded, 'comment', 'comments') +
+                                   ' on notes you already had');
       if (summaryAdded) bits.push((bits.length ? 'and ' : 'Restored ') + summaryAdded +
                                   ' summar' + (summaryAdded === 1 ? 'y' : 'ies'));
       var msg = bits.length ? bits.join(' ') + '. Nothing was removed.'
@@ -2374,7 +2635,13 @@
     lightboxNote = note;
     lightboxImg.src = note.image;
     lightboxTime.textContent = fmt(note.time);
-    lightboxText.textContent = note.text || '';
+    lightboxText.innerHTML = '';
+    noteLines(note).forEach(function(l){
+      var d = document.createElement('div');
+      d.className = 'lb-cmt';
+      d.textContent = l;
+      lightboxText.appendChild(d);
+    });
     lightbox.classList.add('open');
   }
   function closeLightbox(){ lightbox.classList.remove('open'); lightboxNote = null; }
