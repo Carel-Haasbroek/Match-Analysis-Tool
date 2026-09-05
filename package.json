@@ -21,7 +21,8 @@
       {
         "provider": "github",
         "owner": "Carel-Haasbroek",
-        "repo": "Match-Analysis-Tool"
+        "repo": "Match-Analysis-Tool",
+        "releaseType": "release"
       }
     ],
     "directories": {

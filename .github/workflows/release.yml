@@ -59,7 +59,19 @@ jobs:
 
       # Not `npm run dist`: that appends the local tidy-up step, which has nothing to
       # do here and would run after publishing anyway.
+      #
+      # electron-builder's GitHub publisher drafts by default, which looks exactly like
+      # a silent failure: the run goes green, and the assets sit on a draft release the
+      # public never sees. package.json sets releaseType to "release" so they land on
+      # the real one.
       - name: Build and publish
         run: npx electron-builder --publish always
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      # A green run that published nothing is the failure mode worth catching, so say
+      # out loud what was built and how big it is.
+      - name: What was built
+        if: always()
+        shell: bash
+        run: ls -lh dist/*.exe dist/*.yml 2>/dev/null || echo "no artifacts in dist/"
