@@ -527,6 +527,11 @@ input[type=file]{ display:none; }
 .seg-check input{ margin:0; accent-color:var(--accent); cursor:pointer; }
 .seg-check:hover{ color:var(--text); }
 
+.ask-panel{ max-width:460px; }
+.ask-panel select{ font-family:inherit; font-size:.88rem; padding:8px 10px; width:100%;
+  color:var(--text); background:var(--field); border:1px solid var(--border);
+  border-radius:6px; }
+
 /* ---------- recently deleted ---------- */
 #trash-modal .segment-panel{ max-width:560px; max-height:80vh; display:flex;
   flex-direction:column; }

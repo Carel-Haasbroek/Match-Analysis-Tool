@@ -475,6 +475,28 @@
   </div>
 </div>
 
+<div class="lightbox" id="ask-modal">
+  <div class="segment-panel ask-panel">
+    <h2 id="ask-title">Name</h2>
+    <p class="name-hint hidden" id="ask-hint"></p>
+    <form class="segment-form" id="ask-form">
+      <label class="seg-row hidden" id="ask-choice-row">
+        <span class="seg-label" id="ask-choice-label"></span>
+        <select id="ask-choice"></select>
+      </label>
+      <label class="seg-row">
+        <span class="seg-label" id="ask-label">Name</span>
+        <input type="text" id="ask-input" maxlength="120" spellcheck="false">
+      </label>
+      <div class="seg-actions">
+        <span class="grow"></span>
+        <button type="button" id="ask-cancel">Cancel</button>
+        <button type="submit" class="primary">OK</button>
+      </div>
+    </form>
+  </div>
+</div>
+
 <script src="app.js"></script>
 </body>
 </html>

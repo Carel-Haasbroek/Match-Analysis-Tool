@@ -1193,31 +1193,43 @@
 
   function newFolder(){
     if (!DESKTOP.folderCreate) return;
-    var name = (prompt('Name for the new folder (use / to nest)') || '').trim();
-    if (!name) return;
+    /* which vault only needs asking when there is more than one to choose from */
+    var choices = vaults.length > 1
+      ? vaults.filter(function(v){ return v.available; })
+              .map(function(v){ return { value: v.id, label: v.name }; })
+      : [];
 
-    var vaultId = onlyVault();
-    if (vaults.length > 1){
-      var names = vaults.map(function(v, i){ return (i + 1) + ') ' + v.name; }).join('\n');
-      var pick = prompt('Which vault?\n' + names, '1');
-      var i = parseInt(pick, 10);
-      if (!i || i < 1 || i > vaults.length) return;
-      vaultId = vaults[i - 1].id;
-    }
-    Promise.resolve(DESKTOP.folderCreate(vaultId, name))
-      .then(loadFolders).then(renderSessionTree);
+    askText({
+      title: 'New folder',
+      hint: 'Use / to nest, as in “Competition 2026/Nationals”.',
+      label: 'Folder name',
+      placeholder: 'Competition 2026',
+      choiceLabel: 'In which vault',
+      choices: choices,
+      choice: defaultVault()
+    }).then(function(r){
+      if (!r) return;
+      var vaultId = choices.length ? r.choice : onlyVault();
+      return Promise.resolve(DESKTOP.folderCreate(vaultId, r.text))
+        .then(loadFolders).then(renderSessionTree);
+    });
   }
 
   function renameFolder(n){
     if (!DESKTOP.folderRename) return;
     var was = n.folder;
     var leaf = was.split('/').pop();
-    var next = (prompt('Rename the folder', leaf) || '').trim();
-    if (!next || next === leaf) return;
-    var parent = was.split('/').slice(0, -1).join('/');
-    var to = parent ? parent + '/' + next : next;
 
-    Promise.resolve(DESKTOP.folderRename(n.vaultId, was, to)).then(function(ok){
+    askText({ title: 'Rename folder', label: 'Folder name', value: leaf }).then(function(r){
+      if (!r || r.text === leaf) return;
+      var parent = was.split('/').slice(0, -1).join('/');
+      var to = parent ? parent + '/' + r.text : r.text;
+      return renameFolderTo(n, was, to);
+    });
+  }
+
+  function renameFolderTo(n, was, to){
+    return Promise.resolve(DESKTOP.folderRename(n.vaultId, was, to)).then(function(ok){
       if (!ok){ setNotice('That folder could not be renamed.'); return; }
       /* the sessions moved with the directory, so their entries follow */
       library.forEach(function(e){
@@ -1376,8 +1388,12 @@
         e.stopPropagation();
         var v = move.value;
         if (v === NEW_FOLDER_OPTION){
-          v = (prompt('Folder name (use / to nest)', folderOf(entry)) || '').trim();
-          if (!v){ renderRecent(); return; }
+          askText({ title: 'New folder', label: 'Folder name',
+                    hint: 'Use / to nest.', value: folderOf(entry) }).then(function(r){
+            if (!r){ renderRecent(); return; }
+            setEntryFolder(entry, r.text);
+          });
+          return;
         }
         setEntryFolder(entry, v);
       });
@@ -2014,6 +2030,59 @@
     });
   }
 
+  /* ---------- asking for a line of text ---------- */
+  /*
+   * Electron does not implement window.prompt - it throws "prompt() is not supported" -
+   * so every place that needed a name got one back and silently did nothing. This is
+   * the replacement, and it returns a promise so the callers read the same way.
+   */
+  var askResolve = null;
+
+  function askText(opts){
+    opts = opts || {};
+    $('ask-title').textContent = opts.title || 'Name';
+    var hint = $('ask-hint');
+    hint.textContent = opts.hint || '';
+    hint.classList.toggle('hidden', !opts.hint);
+    $('ask-label').textContent = opts.label || 'Name';
+
+    var input = $('ask-input');
+    input.value = opts.value || '';
+    input.placeholder = opts.placeholder || '';
+
+    var choices = opts.choices || [], sel = $('ask-choice');
+    $('ask-choice-row').classList.toggle('hidden', !choices.length);
+    $('ask-choice-label').textContent = opts.choiceLabel || '';
+    sel.innerHTML = '';
+    choices.forEach(function(c){
+      var o = document.createElement('option');
+      o.value = c.value;
+      o.textContent = c.label;
+      sel.appendChild(o);
+    });
+    if (choices.length && opts.choice) sel.value = opts.choice;
+
+    $('ask-modal').classList.add('open');
+    setTimeout(function(){ input.focus(); input.select(); }, 30);
+    return new Promise(function(resolve){ askResolve = resolve; });
+  }
+
+  function closeAsk(value){
+    $('ask-modal').classList.remove('open');
+    var r = askResolve;
+    askResolve = null;
+    if (r) r(value);
+  }
+
+  $('ask-form').addEventListener('submit', function(e){
+    e.preventDefault();
+    var text = $('ask-input').value.trim();
+    if (!text){ $('ask-input').focus(); return; }
+    closeAsk({ text: text, choice: $('ask-choice').value });
+  });
+  $('ask-cancel').addEventListener('click', function(){ closeAsk(null); });
+  wireModal($('ask-modal'), function(){ closeAsk(null); });
+
   function segmentOn(){ return $('segment-toggle').checked; }
 
   function openNewSession(){
@@ -2230,9 +2299,12 @@
       ren.textContent = '✎';
       ren.title = 'Rename this vault';
       ren.addEventListener('click', function(){
-        var v2 = (prompt('Name for this vault', v.name) || '').trim();
-        if (!v2) return;
-        DESKTOP.vaultRename(v.id, v2).then(refreshVaults);
+        askText({ title: 'Rename vault', label: 'Name', value: v.name,
+                  hint: 'The name is only ours. The folder keeps its own.' })
+          .then(function(r){
+            if (!r) return;
+            return DESKTOP.vaultRename(v.id, r.text).then(refreshVaults);
+          });
       });
       row.appendChild(ren);
 

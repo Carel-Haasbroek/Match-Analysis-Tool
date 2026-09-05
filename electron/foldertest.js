@@ -24,6 +24,23 @@ function check(name, cond, detail){ results.push({ name, pass: !!cond, detail })
 const wait = (ms) => new Promise((r) => setTimeout(r, ms));
 function run(win, code){ return win.webContents.executeJavaScript(code); }
 
+/*
+ * Answer the app's own text prompt. Stubbing window.prompt would prove nothing here:
+ * Electron does not implement it - it throws - which is exactly the bug this modal
+ * exists to fix, and a stubbed test would have gone on passing while the button did
+ * nothing at all.
+ */
+async function answerAsk(win, text){
+  const seen = await run(win, `document.getElementById('ask-modal').classList.contains('open')`);
+  if (!seen) return false;
+  await run(win, `(function(){
+    document.getElementById('ask-input').value = ${JSON.stringify(text)};
+    document.getElementById('ask-form').dispatchEvent(
+      new Event('submit', { bubbles: true, cancelable: true }));
+  })()`);
+  return true;
+}
+
 function dirsUnder(root){
   const out = [];
   (function walk(d, rel){
@@ -172,9 +189,10 @@ app.whenReady().then(() => {
       await run(win, `document.getElementById('sessions-btn').click()`);
       await wait(600);
 
-      await run(win, `window.prompt = function(){ return 'Drills/Guard'; };
-        document.getElementById('new-folder-btn').click()`);
-      await wait(900);
+      await run(win, `document.getElementById('new-folder-btn').click()`);
+      await wait(500);
+      check('New folder asks for a name', await answerAsk(win, 'Drills/Guard'));
+      await wait(1200);
       const made = await run(win, `[].slice.call(
         document.querySelectorAll('#sessions-tree .tree-name')).map(function(e){
           return e.textContent; })`);
@@ -223,14 +241,15 @@ app.whenReady().then(() => {
       check('its notes came along', movedNotes === 1, String(movedNotes));
 
       /* ---------- renaming and removing ---------- */
-      await run(win, `window.prompt = function(){ return 'Guard passing'; };
-        (function(){
-          var folders = [].slice.call(document.querySelectorAll('#sessions-tree .tree-folder'));
-          var f = folders.filter(function(x){
-            var n = x.querySelector('.tree-name');
-            return n && n.textContent === 'Guard'; })[0];
-          f.querySelector('.tree-act').click();
-        })()`);
+      await run(win, `(function(){
+        var folders = [].slice.call(document.querySelectorAll('#sessions-tree .tree-folder'));
+        var f = folders.filter(function(x){
+          var n = x.querySelector('.tree-name');
+          return n && n.textContent === 'Guard'; })[0];
+        f.querySelector('.tree-act').click();
+      })()`);
+      await wait(500);
+      check('renaming a folder asks for the new name', await answerAsk(win, 'Guard passing'));
       await wait(1500);
       check('a folder can be renamed, and takes its sessions with it',
             dirsUnder(NOTES).indexOf('Drills/Guard passing/Training drill') >= 0,
@@ -246,9 +265,10 @@ app.whenReady().then(() => {
       })()`);
       check('a folder holding sessions offers no remove', acts === 1, String(acts));
 
-      await run(win, `window.prompt = function(){ return 'Spare'; };
-        document.getElementById('new-folder-btn').click()`);
-      await wait(900);
+      await run(win, `document.getElementById('new-folder-btn').click()`);
+      await wait(500);
+      await answerAsk(win, 'Spare');
+      await wait(1200);
       await run(win, `window.confirm = function(){ return true; };
         (function(){
           var folders = [].slice.call(document.querySelectorAll('#sessions-tree .tree-folder'));

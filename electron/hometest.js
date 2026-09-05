@@ -338,9 +338,9 @@ app.whenReady().then(() => {
          a session that could not find it again - the same action as Choose a video file,
          quietly worse. The drop is synthesised; what is checked is that a path comes back
          and reaches the library entry. */
-      const DROPPED = path.join(SANDBOX, 'dropped.mp4');
-      fs.copyFileSync(path.join(__dirname, 'fixtures', 'tiny.mp4'), DROPPED);
-      const b64 = fs.readFileSync(DROPPED).toString('base64');
+      /* A handful of bytes rather than the whole fixture: what is checked is that the
+         drop registers a session keyed by name and size, and injecting 28 KB of base64
+         through executeJavaScript was flaky for no benefit. */
 
       /* A File built in the page has no filesystem origin, so getPathForFile rightly
          returns nothing for it and a real drag cannot be synthesised from here. What is
@@ -349,9 +349,7 @@ app.whenReady().then(() => {
       check('the preload can turn a dropped file into a path', bridged, String(bridged));
 
       await run(win, `(function(){
-        var bin = atob(${JSON.stringify(b64)});
-        var bytes = new Uint8Array(bin.length);
-        for (var i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+        var bytes = new Uint8Array(64);
         var file = new File([bytes], 'dropped.mp4', { type: 'video/mp4' });
         var dt = new DataTransfer();
         dt.items.add(file);
