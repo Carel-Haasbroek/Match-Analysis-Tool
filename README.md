@@ -36,13 +36,40 @@ does not delete your notes** — see below.
 
 ## Where your notes live
 
-`%APPDATA%\video-notes\store` — one small file per video, keyed by the video's filename and
-size. Both the installed app and a run from source use this same folder, so they share
-notes.
+In a **`Notes` folder beside the app** — a plain folder tree you can open, browse, copy to a
+USB stick or put in Dropbox. The home screen shows the exact path at the top; click it to
+open the folder.
 
-Two consequences worth knowing:
+```
+Notes/
+  library.json                  the sessions you have opened
+  prefs.json                    your name, theme, hold time, volume
+  Competition 2026/             a folder you made on the home screen
+    Jack round 1/               one session
+      session.json              the moments and their comment threads
+      summary.md                your written summary, as plain markdown
+      drawings/                 one PNG per drawing, named for its timestamp
+```
+
+Grouping a session into a folder on the home screen moves its folder on disk, and the other
+way round works too. The exact location depends on how the app is running:
+
+| | |
+|---|---|
+| Installed | `Notes` beside the installed exe |
+| Portable | `Notes` beside the portable exe — carry both on a stick together |
+| From source | `Notes` in the project folder |
+| If none of those can be written to | `%APPDATA%\video-notes\Notes` |
+
+An installed build lands on that last row when it is installed under Program Files, which
+needs elevation to write to.
+
+Three consequences worth knowing:
 
 - Uninstalling the app leaves your notes untouched. Reinstalling picks them straight back up.
+- Notes from before this layout, in `%APPDATA%\video-notes\store`, are moved across
+  automatically the first time you run the app. The old copy is left exactly where it was
+  and a backup is written first, so the move cannot cost you anything.
 - Notes made in the **browser** version live somewhere else entirely (the browser's own
   storage, per site). They do not appear in the desktop app. To carry them across, use
   **Export all notes** in the browser and **Import backup** in the app.
@@ -50,8 +77,10 @@ Two consequences worth knowing:
 ### Backing up
 
 On the home screen, **Export all notes** writes one JSON file holding every note, every
-summary and every session name. **Import backup** merges it back — it only ever adds, never
-overwrites or deletes, so restoring an old backup can't cost you newer work.
+comment, every summary and every session name. **Import backup** merges it back — it only
+ever adds, never overwrites or deletes, so restoring an old backup can't cost you newer
+work. Threads are merged comment by comment, which is also how you take another coach's
+file: their remarks land alongside yours on the same moments.
 
 Worth doing before you rely on the app for anything you'd hate to redo.
 
@@ -136,6 +165,15 @@ importing the same file twice changes nothing.
 summary and name. Rename one with the pencil that appears when you hover it; the video
 itself is remembered, so clicking a session reopens it. If the file has moved, the session
 says so and offers to point at its new location — your notes reattach either way.
+
+**Grouping** — the dropdown on a session puts it in a folder, and **New folder…** makes one.
+Folders nest, and they are real folders: grouping a session moves its folder inside the
+`Notes` tree, so what you see on the home screen is what you see in Explorer.
+
+**Look** — eight themes on the home screen, including MS-DOS phosphor green, an amber CRT,
+Windows 95 grey with proper bevels, Game Boy olive, blueprint, paper for daylight and
+vaporwave. The pen colours are deliberately left alone by all of them: those are your
+content, not decoration.
 
 ---
 
