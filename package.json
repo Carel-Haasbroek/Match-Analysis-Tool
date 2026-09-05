@@ -7,7 +7,7 @@
   "scripts": {
     "start": "electron .",
     "test": "node electron/selftest.js && node electron/storetest.js",
-    "dist": "electron-builder",
+    "dist": "electron-builder && node build/sort-dist.js",
     "icon": "node build/make-icon.js"
   },
   "devDependencies": {

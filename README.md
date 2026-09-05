@@ -10,12 +10,12 @@ Everything stays on your machine. Nothing is uploaded.
 
 ## Installing
 
-Two builds come out of `dist/`. Pick one:
+Two builds come out of `dist/`, one per folder so they cannot be confused. Pick one:
 
 | | |
 |---|---|
-| **`Video Notes Setup 1.0.0.exe`** | Normal installer. Start Menu entry, uninstaller, lets you choose the install folder. |
-| **`VideoNotes-1.0.0-portable.exe`** | Single file, no installation. Copy it anywhere and double-click. Good for a USB stick or a machine you don't want to install on. |
+| **`dist/installer/Video Notes Setup 1.0.0.exe`** | Normal installer. Start Menu entry, uninstaller, lets you choose the install folder. |
+| **`dist/portable/VideoNotes-1.0.0-portable.exe`** | Single file, no installation. Copy it anywhere and double-click. Good for a USB stick or a machine you don't want to install on. |
 
 ### Running the installer
 
@@ -28,6 +28,10 @@ Two builds come out of `dist/`. Pick one:
 
 The portable exe shows the same warning on first run, and is dismissed the same way.
 Signing the build would remove it, but that needs a paid certificate.
+
+Copy the portable exe somewhere of its own before you use it — **not** left inside `dist/`.
+It keeps your notes in a `Notes` folder beside itself, and `dist/` is build output that a
+rebuild or a clean-up can empty.
 
 Uninstall through Settings → Apps, or the uninstaller in the install folder. **Uninstalling
 does not delete your notes** — see below.
@@ -104,7 +108,8 @@ launches the app.
 npm run dist
 ```
 
-Both artifacts land in `dist/`. The first build downloads a Windows toolchain, so give it a
+Artifacts land in `dist/installer/` and `dist/portable/`; `dist/win-unpacked/` is the
+intermediate both are built from. The first build downloads a Windows toolchain, so give it a
 few minutes.
 
 ### The browser version
