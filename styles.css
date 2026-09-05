@@ -500,7 +500,8 @@ input[type=file]{ display:none; }
 
 /* the settings modal stacks the blocks that used to sit down the home page */
 #settings-modal .segment-panel{ max-width:560px; max-height:86vh; overflow-y:auto; }
-#settings-modal .who-block{ margin-top:0; padding-top:0; border-top:none; }
+#settings-modal .vault-block{ margin-top:0; }
+#settings-modal .who-block{ margin-top:16px; padding-top:14px; }
 /* these headings used to be styled by `.home h3`, which no longer wraps them */
 #settings-modal h3{ font-size:.74rem; font-weight:700; margin:0 0 10px;
   color:var(--accent-2); text-transform:uppercase; letter-spacing:.16em; }
@@ -510,6 +511,26 @@ input[type=file]{ display:none; }
   color:var(--text-dim); cursor:pointer; user-select:none; }
 .seg-check input{ margin:0; accent-color:var(--accent); cursor:pointer; }
 .seg-check:hover{ color:var(--text); }
+
+/* ---------- vaults ---------- */
+.vault-list{ display:flex; flex-direction:column; gap:4px; margin-bottom:10px; }
+.vault-row{ display:flex; align-items:center; gap:9px; padding:7px 9px; border-radius:6px;
+  border:1px solid var(--border); background:var(--panel-2); }
+.vault-row.is-default{ border-color:var(--accent); background:var(--accent-dim); }
+.vault-row.gone{ border-color:rgba(255,95,109,.5); background:rgba(255,95,109,.08); }
+.vault-main{ flex:1; min-width:0; }
+.vault-name{ font-size:.85rem; color:var(--text); }
+.vault-meta{ font-size:.72rem; color:var(--text-dim); margin-top:2px;
+  overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.vault-path{ cursor:pointer; }
+.vault-path:hover{ color:var(--accent-2); text-decoration:underline; }
+.vault-tag{ font-size:.66rem; letter-spacing:.1em; text-transform:uppercase;
+  color:var(--accent); flex-shrink:0; }
+.vault-row button{ padding:3px 7px; font-size:.72rem; flex-shrink:0; }
+.vault-row .vault-del:hover{ color:var(--danger); }
+#segment-vault{ font-family:inherit; font-size:.88rem; padding:8px 10px; width:100%;
+  color:var(--text); background:var(--field); border:1px solid var(--border);
+  border-radius:6px; }
 
 /* ---------- who is commenting ---------- */
 .who-block{ width:100%; margin-top:14px; padding-top:12px;

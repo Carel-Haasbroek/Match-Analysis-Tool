@@ -21,5 +21,12 @@ contextBridge.exposeInMainWorld('desktop', {
   dataDir: () => ipcRenderer.invoke('app:dataDir'),
   version: () => ipcRenderer.invoke('app:version'),
   reveal: (target) => ipcRenderer.invoke('app:reveal', target),
-  moveSession: (key, groupPath) => ipcRenderer.invoke('session:move', key, groupPath)
+  moveSession: (key, groupPath) => ipcRenderer.invoke('session:move', key, groupPath),
+
+  /* vaults: named root folders, all live at once */
+  vaults: () => ipcRenderer.invoke('vault:list'),
+  vaultAdd: () => ipcRenderer.invoke('vault:add'),
+  vaultRename: (id, name) => ipcRenderer.invoke('vault:rename', id, name),
+  vaultRemove: (id) => ipcRenderer.invoke('vault:remove', id),
+  vaultDefault: (id) => ipcRenderer.invoke('vault:default', id)
 });

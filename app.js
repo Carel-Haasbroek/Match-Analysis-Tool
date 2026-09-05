@@ -120,8 +120,37 @@
     var mm = h > 0 ? String(m).padStart(2,'0') : String(m);
     return (h > 0 ? h + ':' : '') + mm + ':' + String(s).padStart(2,'0');
   }
+  /* ---------- vault-qualified keys ---------- */
+  /* Two vaults can hold the same video, so a session key has to say which vault it is
+     in. The vault goes outermost, so the store routes on one split:
+
+       vault:v2|vnotes:Jack_1.mp4_65939131
+
+     A key with no prefix belongs to the first vault, which is every note written before
+     vaults existed. Derived keys - summary, trash - are built by wrapping the *inner*
+     key and re-attaching the vault, so the prefix never ends up buried in the middle. */
+  var VAULT_RE = /^vault:([^|]+)\|([\s\S]+)$/;
+  function withVault(id, inner){ return id ? 'vault:' + id + '|' + inner : inner; }
+  function vaultOf(key){ var m = VAULT_RE.exec(key || ''); return m ? m[1] : ''; }
+  function innerOf(key){ var m = VAULT_RE.exec(key || ''); return m ? m[2] : (key || ''); }
+  /* a key beside another one, in the same vault */
+  function siblingKey(key, prefix){ return withVault(vaultOf(key), prefix + innerOf(key)); }
+
+  /* Which vault a new session goes into. The renderer learns it from the list. */
+  var vaults = [], newSessionVault = '';
+  function defaultVault(){
+    if (newSessionVault) return newSessionVault;
+    for (var i = 0; i < vaults.length; i++) if (vaults[i].isDefault) return vaults[i].id;
+    return vaults.length ? vaults[0].id : '';
+  }
+  function vaultName(id){
+    for (var i = 0; i < vaults.length; i++) if (vaults[i].id === id) return vaults[i].name;
+    return '';
+  }
+
   function keyFor(file){
-    return 'vnotes:' + (file.name + '_' + file.size).replace(/[^a-zA-Z0-9_.-]/g,'_').slice(0,150);
+    return withVault(defaultVault(),
+      'vnotes:' + (file.name + '_' + file.size).replace(/[^a-zA-Z0-9_.-]/g,'_').slice(0,150));
   }
   function setStatus(msg){ statusEl.textContent = msg; }
 
@@ -611,7 +640,7 @@
   function loadYouTubeVideo(videoId, startAt, label){
     openSource(function(){ return createYouTubeSource(videoId, startAt); }, {
       kind: 'youtube',
-      key: 'vnotes:yt:' + videoId,
+      key: withVault(defaultVault(), 'vnotes:yt:' + videoId),
       label: label || ('YouTube · ' + videoId),
       videoId: videoId,
       url: 'https://www.youtube.com/watch?v=' + videoId
@@ -629,7 +658,8 @@
      so absolute = segment.start + note.time whenever it is wanted. */
 
   function clipKey(videoId, start, end){
-    return 'vnotes:yt:' + videoId + '@' + start.toFixed(2) + '-' + end.toFixed(2);
+    return withVault(defaultVault(),
+      'vnotes:yt:' + videoId + '@' + start.toFixed(2) + '-' + end.toFixed(2));
   }
 
   function clipSource(inner, start, end){
@@ -706,7 +736,7 @@
     }
     var known = null;
     for (var i = 0; i < library.length; i++){
-      if (library[i].key === 'vnotes:yt:' + p.videoId){ known = library[i]; break; }
+      if (innerOf(library[i].key) === 'vnotes:yt:' + p.videoId){ known = library[i]; break; }
     }
     loadYouTubeVideo(p.videoId, p.startAt, known && known.label);
     return true;
@@ -866,6 +896,7 @@
       meta.className = 'recent-meta';
       var bits = [(entry.noteCount || 0) + ' note' + (entry.noteCount === 1 ? '' : 's')];
       if (entry.lastOpened) bits.push(relTime(entry.lastOpened));
+      if (vaults.length > 1 && entry.vaultName) bits.push(entry.vaultName);
       if (folderOf(entry)) bits.push(folderOf(entry));
       meta.textContent = bits.join(' · ');
       main.appendChild(label);
@@ -903,7 +934,7 @@
     var shown = q
       ? library.filter(function(e){
           return entryName(e).toLowerCase().indexOf(q) >= 0 ||
-                 folderOf(e).toLowerCase().indexOf(q) >= 0;
+                 treePathOf(e).toLowerCase().indexOf(q) >= 0;
         })
       : library;
 
@@ -916,11 +947,12 @@
       return;
     }
 
-    /* build the folder tree from the paths themselves */
+    /* build the folder tree from the paths themselves, with the vault as the outermost
+       level once there is more than one - the same shape the folders already draw */
     var root = node('');
     shown.forEach(function(e){
       var at = root;
-      folderOf(e).split('/').forEach(function(part){
+      treePathOf(e).split('/').forEach(function(part){
         part = part.trim();
         if (!part) return;
         var path = at.path ? at.path + '/' + part : part;
@@ -982,6 +1014,14 @@
       Object.keys(n.kids).sort().forEach(function(k){ drawFolder(n.kids[k], host, depth + 1); });
       n.entries.forEach(function(e){ host.appendChild(sessionRow(e, depth + 1)); });
     }
+  }
+
+  /* a vault reads as one more level of folder, so the tree needs no special case */
+  function treePathOf(e){
+    var f = folderOf(e);
+    if (vaults.length <= 1) return f;
+    var v = vaultName(e.vault) || 'Vault';
+    return f ? v + '/' + f : v;
   }
 
   function sessionRow(entry, depth){
@@ -1734,6 +1774,8 @@
 
   function openNewSession(){
     $('segment-error').textContent = '';
+    newSessionVault = '';
+    renderVaultPicker();
     newSessionModal.classList.add('open');
     setTimeout(function(){ $('segment-url').focus(); }, 30);
   }
@@ -1778,7 +1820,10 @@
   wireModal(sessionsModal, closeSessionsModal);
 
   function closeSettings(){ settingsModal.classList.remove('open'); }
-  $('settings-btn').addEventListener('click', function(){ settingsModal.classList.add('open'); });
+  $('settings-btn').addEventListener('click', function(){
+    settingsModal.classList.add('open');
+    loadVaults();
+  });
   $('settings-close').addEventListener('click', closeSettings);
   wireModal(settingsModal, closeSettings);
 
@@ -1838,6 +1883,143 @@
       refreshName();
       renderRecent();
     }, 400);
+  }
+
+  /* ---------- vaults ---------- */
+  function loadVaults(){
+    if (!DESKTOP.vaults) return Promise.resolve();
+    return DESKTOP.vaults().then(function(list){
+      vaults = Array.isArray(list) ? list : [];
+      renderVaultList();
+      renderVaultPicker();
+      showVaultFooter();
+    });
+  }
+
+  /* adding or forgetting a vault changes which sessions exist, so the library follows */
+  function refreshVaults(){
+    return loadVaults().then(function(){ return loadLibrary(); });
+  }
+
+  /* The sessions modal used to name the one folder notes were in. With several vaults
+     a single path is a half-truth, so it points at the list instead. */
+  function showVaultFooter(){
+    var el = $('notes-folder');
+    if (!el || vaults.length < 2) return;
+    el.textContent = vaults.length + ' vaults · manage them in Settings';
+    el.title = 'Open Settings';
+    el.classList.remove('hidden');
+    el.onclick = function(){
+      closeSessionsModal();
+      settingsModal.classList.add('open');
+      loadVaults();
+    };
+  }
+
+  function renderVaultList(){
+    var host = $('vault-list');
+    if (!host) return;
+    host.innerHTML = '';
+
+    vaults.forEach(function(v){
+      var row = document.createElement('div');
+      row.className = 'vault-row' + (v.isDefault ? ' is-default' : '') +
+                      (v.available ? '' : ' gone');
+
+      var main = document.createElement('div');
+      main.className = 'vault-main';
+      var name = document.createElement('div');
+      name.className = 'vault-name';
+      name.textContent = v.name;
+      var meta = document.createElement('div');
+      meta.className = 'vault-meta vault-path';
+      meta.title = 'Open this folder';
+      meta.textContent = v.available
+        ? v.sessions + ' session' + (v.sessions === 1 ? '' : 's') + ' · ' + v.path
+        : 'Folder not found · ' + v.path;
+      meta.addEventListener('click', function(){ DESKTOP.reveal(v.path); });
+      main.appendChild(name);
+      main.appendChild(meta);
+      row.appendChild(main);
+
+      if (v.isDefault){
+        var tag = document.createElement('span');
+        tag.className = 'vault-tag';
+        tag.textContent = 'new notes';
+        row.appendChild(tag);
+      } else if (v.available){
+        var mk = document.createElement('button');
+        mk.type = 'button';
+        mk.textContent = 'Make default';
+        mk.title = 'New sessions go here';
+        mk.addEventListener('click', function(){
+          DESKTOP.vaultDefault(v.id).then(function(){ newSessionVault = ''; return refreshVaults(); });
+        });
+        row.appendChild(mk);
+      }
+
+      var ren = document.createElement('button');
+      ren.type = 'button';
+      ren.textContent = '✎';
+      ren.title = 'Rename this vault';
+      ren.addEventListener('click', function(){
+        var v2 = (prompt('Name for this vault', v.name) || '').trim();
+        if (!v2) return;
+        DESKTOP.vaultRename(v.id, v2).then(refreshVaults);
+      });
+      row.appendChild(ren);
+
+      if (vaults.length > 1){
+        var del = document.createElement('button');
+        del.type = 'button';
+        del.className = 'vault-del';
+        del.textContent = '✕';
+        del.title = 'Forget this vault';
+        del.addEventListener('click', function(){
+          /* the wording matters: a cross beside a folder full of work reads as delete */
+          if (!confirm('Forget the vault "' + v.name + '"?\n\nIts folder and every note ' +
+                       'in it stay exactly where they are — this only takes it off the ' +
+                       'list. You can add it again at any time.')) return;
+          DESKTOP.vaultRemove(v.id).then(function(){ newSessionVault = ''; return refreshVaults(); });
+        });
+        row.appendChild(del);
+      }
+
+      host.appendChild(row);
+    });
+  }
+
+  function renderVaultPicker(){
+    var row = $('segment-vault-row'), sel = $('segment-vault');
+    if (!row || !sel) return;
+    /* with one vault there is nothing to choose, so the row is not there at all */
+    row.classList.toggle('hidden', vaults.length <= 1);
+    sel.innerHTML = '';
+    vaults.forEach(function(v){
+      if (!v.available) return;
+      var o = document.createElement('option');
+      o.value = v.id;
+      o.textContent = v.name;
+      sel.appendChild(o);
+    });
+    sel.value = defaultVault();
+  }
+
+  if (DESKTOP.vaultAdd){
+    $('vault-add').addEventListener('click', function(){
+      DESKTOP.vaultAdd().then(function(r){
+        if (!r) return;
+        newSessionVault = '';
+        return refreshVaults().then(function(){
+          setNotice(r.added
+            ? 'Added the vault “' + r.vault.name + '”. Its sessions are in the list now.'
+            : 'That folder is already a vault.', 9000);
+        });
+      });
+    });
+    $('segment-vault').addEventListener('change', function(){
+      newSessionVault = this.value;
+    });
   }
 
   /* ---------- who is commenting ---------- */
@@ -1992,7 +2174,7 @@
   var TRASH_MAX = 50;
   function trash(note){
     if (!videoKey) return;
-    var key = 'vnotes:trash:' + videoKey;
+    var key = siblingKey(videoKey, 'vnotes:trash:');
     store.get(key).then(function(old){
       var list = Array.isArray(old) ? old : [];
       list.unshift({ deleted: Date.now(), note: note });
@@ -2579,7 +2761,7 @@
 
   /* ---------- per-video summary ---------- */
   /* Kept under its own key so the notes array is never touched by summary edits. */
-  function summaryKey(){ return videoKey ? 'vnotes:summary:' + videoKey : null; }
+  function summaryKey(){ return videoKey ? siblingKey(videoKey, 'vnotes:summary:') : null; }
 
   function loadSummary(){
     summaryText.value = '';
@@ -2672,31 +2854,56 @@
 
   var SUMMARY_PREFIX = 'vnotes:summary:';
 
+  /* A backup keeps each key's vault, and records what the vaults were called, because
+     two vaults can hold the same video and flattening them would quietly drop one.
+     Restoring matches vaults by name, so a file carries between machines where the same
+     vault has a different id - and a backup written before vaults still restores, into
+     whichever vault new sessions go to. */
+  function backupVaultKey(k){ return k; }
+
+  function restoreVaultKey(payloadKey, data){
+    var id = vaultOf(payloadKey), inner = innerOf(payloadKey);
+    if (!id) return withVault(defaultVault(), inner);
+    var names = (data && data.vaults) || {};
+    var wanted = names[id];
+    if (wanted){
+      for (var i = 0; i < vaults.length; i++){
+        if (vaults[i].name === wanted) return withVault(vaults[i].id, inner);
+      }
+    }
+    return withVault(defaultVault(), inner);
+  }
+
   $('backup-btn').addEventListener('click', function(){
     store.keys().then(function(keys){
       var wanted = keys.filter(function(k){
-        return k.indexOf('vnotes:') === 0 && k !== LIB_KEY && k.indexOf('vnotes:trash:') !== 0;
+        var inner = innerOf(k);
+        return inner.indexOf('vnotes:') === 0 && inner !== LIB_KEY &&
+               inner.indexOf('vnotes:trash:') !== 0;
       });
       return Promise.all(wanted.map(function(k){
         return store.get(k).then(function(v){ return { key: k, value: v }; });
       })).then(function(rows){
         var videos = {}, summaries = {}, total = 0, notesWith = 0;
         rows.forEach(function(r){
-          if (r.key.indexOf(SUMMARY_PREFIX) === 0){
+          if (innerOf(r.key).indexOf(SUMMARY_PREFIX) === 0){
             if (r.value && typeof r.value.text === 'string' && r.value.text.trim()){
-              summaries[r.key] = r.value;
+              summaries[backupVaultKey(r.key)] = r.value;
             }
             return;
           }
           if (isNoteList(r.value) && r.value.length){
-            videos[r.key] = r.value; total += r.value.length; notesWith++;
+            videos[backupVaultKey(r.key)] = r.value; total += r.value.length; notesWith++;
           }
         });
         var sCount = Object.keys(summaries).length;
         if (!total && !sCount){ setNotice('There is nothing to back up yet.'); return; }
+        var vaultNames = {};
+        vaults.forEach(function(v){ vaultNames[v.id] = v.name; });
         var payload = {
           format: 'video-notes-backup', version: 1,
           saved: new Date().toISOString(),
+          vaults: vaultNames,
           library: library, videos: videos, summaries: summaries
         };
         var stamp = new Date().toISOString().slice(0,16).replace(/[:T]/g,'-');
@@ -2733,11 +2940,12 @@
   /* Summaries are free text, so a clash cannot be merged the way note ids can.
      An empty local summary takes the backup's copy; a non-empty one is left exactly
      as it is and reported, so restoring can never overwrite something you wrote. */
-  function restoreSummaries(map){
+  function restoreSummaries(map, data){
     if (!map) return Promise.resolve({ added: 0, kept: 0 });
     var added = 0, kept = 0;
-    var jobs = Object.keys(map).map(function(k){
-      var incoming = map[k];
+    var jobs = Object.keys(map).map(function(payloadKey){
+      var incoming = map[payloadKey];
+      var k = restoreVaultKey(payloadKey, data);
       if (!incoming || typeof incoming.text !== 'string' || !incoming.text.trim()){
         return Promise.resolve();
       }
@@ -2754,8 +2962,9 @@
     var keys = Object.keys(data.videos || {});
     var added = 0, touched = 0, summaryAdded = 0, summaryKept = 0, commentsAdded = 0;
 
-    var work = keys.map(function(k){
-      var incoming = data.videos[k];
+    var work = keys.map(function(payloadKey){
+      var incoming = data.videos[payloadKey];
+      var k = restoreVaultKey(payloadKey, data);
       if (!isNoteList(incoming)) return Promise.resolve();
       return store.get(k).then(function(existing){
         var res = mergeNoteLists(existing, incoming);
@@ -2768,7 +2977,7 @@
     });
 
     Promise.all(work).then(function(){
-      return restoreSummaries(data.summaries);
+      return restoreSummaries(data.summaries, data);
     }).then(function(res){
       summaryAdded = res.added; summaryKept = res.kept;
       return mergeLibrary(data.library);
@@ -2875,5 +3084,5 @@
   showStart();   /* home and the player are exclusive views; start on home */
   renderNotes();
   loadPrefs();
-  loadLibrary();
+  loadVaults().then(loadLibrary);
 })();

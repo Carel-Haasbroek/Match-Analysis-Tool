@@ -6,14 +6,17 @@ const fs = require('fs');
 
 const { Store } = require('./store');
 const { FolderStore } = require('./folderstore');
+const { Vaults } = require('./vaults');
+const { VaultStore } = require('./vaultstore');
 const { resolveDataDir, migrateIfNeeded } = require('./datadir');
 const { createServer } = require('./server');
 
 const ROOT = path.join(__dirname, '..');
 
 let win = null;
-let store = null;
-let dataDir = null;          /* { dir, kind } */
+let store = null;            /* a VaultStore: one FolderStore per vault, routed by key */
+let vaults = null;
+let dataDir = null;          /* { dir, kind } - the first vault, where legacy keys live */
 let migration = null;        /* what happened on first run, reported to the window */
 let http = null;
 let port = 0;
@@ -62,6 +65,54 @@ ipcMain.handle('app:reveal', (e, target) => {
   return true;
 });
 
+/* ---------- vaults ---------- */
+/* Counting sessions means opening the vault, so it is done here rather than asked of
+   the renderer, which only ever sees keys. An unavailable vault reports nothing rather
+   than failing: a Drive folder that has not synced yet is normal, not broken. */
+function vaultRows(){
+  return vaults.list().map((v) => {
+    let sessions = 0;
+    if (v.available){
+      try {
+        const s = store.storeFor(v.id);
+        const lib = s ? JSON.parse(s.get('vnotes:index') || '[]') : [];
+        sessions = Array.isArray(lib) ? lib.length : 0;
+      } catch (e) { sessions = 0; }
+    }
+    return Object.assign({ sessions: sessions }, v);
+  });
+}
+
+ipcMain.handle('vault:list', () => vaultRows());
+
+ipcMain.handle('vault:add', async () => {
+  const r = await dialog.showOpenDialog(win, {
+    title: 'Choose a folder to keep notes in',
+    properties: ['openDirectory', 'createDirectory']
+  });
+  if (r.canceled || !r.filePaths.length) return null;
+  const added = vaults.add(r.filePaths[0]);
+  return { vault: added.vault, added: added.added, list: vaultRows() };
+});
+
+ipcMain.handle('vault:rename', (e, id, name) => {
+  vaults.rename(id, name);
+  return vaultRows();
+});
+
+/* Forgets the vault. The folder is left exactly where it is - it holds someone's work,
+   and removing a row from a list is not a request to delete it. */
+ipcMain.handle('vault:remove', (e, id) => {
+  const ok = vaults.remove(id);
+  if (ok) store.forget(id);
+  return { ok: ok, list: vaultRows() };
+});
+
+ipcMain.handle('vault:default', (e, id) => {
+  vaults.setDefault(id);
+  return vaultRows();
+});
+
 /* grouping: the app's folders are the folders on disk */
 ipcMain.handle('session:move', (e, key, groupPath) => store.moveSession(key, groupPath));
 
@@ -100,13 +151,16 @@ function describe(filePath){
 }
 
 app.whenReady().then(async () => {
+  /* The folder notes lived in before vaults existed becomes the first vault, in place. */
   dataDir = resolveDataDir(app);
-  store = new FolderStore(dataDir.dir);
+  vaults = new Vaults(app.getPath('userData'), dataDir.dir);
+  store = new VaultStore(vaults);
 
-  /* One-time move out of the old base64-blob store. It writes a backup first and
-     never deletes the old copy: this is work that cannot be recreated. */
+  /* One-time move out of the old base64-blob store, into the first vault. It writes a
+     backup first and never deletes the old copy: this is work that cannot be recreated. */
   try {
-    migration = migrateIfNeeded(path.join(app.getPath('userData'), 'store'), store,
+    migration = migrateIfNeeded(path.join(app.getPath('userData'), 'store'),
+      store.storeFor(vaults.first().id),
       (m) => console.log('[migrate] ' + m));
     if (migration && migration.migrated){
       console.log('[migrate] moved ' + migration.migrated + ' keys, ' +
@@ -117,7 +171,10 @@ app.whenReady().then(async () => {
     migration = { error: String(err && err.message || err) };
     console.error('[migrate] failed: ' + migration.error);
   }
-  console.log('[notes] ' + dataDir.dir + '  (' + dataDir.kind + ')');
+  for (const v of vaults.list()){
+    console.log('[vault] ' + v.name + '  ' + v.path +
+                (v.available ? '' : '  (NOT FOUND)') + (v.isDefault ? '  [default]' : ''));
+  }
   http = createServer({ root: ROOT });
   port = await http.listen();
   createWindow();

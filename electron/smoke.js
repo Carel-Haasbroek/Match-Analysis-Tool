@@ -94,7 +94,11 @@ app.whenReady().then(() => {
         await window.storage.set('vn:smoke', JSON.stringify({ hello: 'world' }));
         const got = await window.storage.get('vn:smoke');
         const keys = await window.storage.keys();
-        return { value: got && got.value, hasKey: keys.indexOf('vn:smoke') >= 0 };
+        /* keys() names the vault a key is in; an unprefixed key means the first one */
+        return { value: got && got.value,
+                 hasKey: keys.some(function(k){
+                   return k === 'vn:smoke' || /|vn:smoke$/.test(k);
+                 }) };
       })()`);
       check('storage round-trips to disk', rt.value === '{"hello":"world"}', rt.value);
       check('keys() reports it', rt.hasKey);

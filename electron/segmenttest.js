@@ -49,7 +49,8 @@ function libraryState(win){
     var v = await window.storage.get('vnotes:index');
     var lib = v ? JSON.parse(v.value) : [];
     return lib.map(function(e){
-      return { key: e.key, name: e.customName || e.label,
+      /* keys carry their vault now - these checks are about the session part */
+      return { key: e.key.split('|').pop(), name: e.customName || e.label,
                segment: e.segment || null, videoId: e.videoId || null };
     });
   })()`);

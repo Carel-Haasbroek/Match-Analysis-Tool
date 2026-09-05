@@ -45,13 +45,19 @@ does not delete your notes** — see below.
 
 ## Where your notes live
 
-In **`%APPDATA%\video-notes\Notes`** — a plain folder tree you can open, browse, copy to a
-USB stick or put in Dropbox. The home screen shows the exact path at the top; click it to
-open the folder.
+In **vaults**. A vault is a folder your notes live in — a plain tree you can open, browse,
+copy to a stick or drop in Dropbox. You start with one, at
+**`%APPDATA%\video-notes\Notes`**, and can add as many as you like under
+**Settings → Vaults**.
 
-The installed app, the portable exe and a run from source all read and write that one
-folder, so it does not matter which you open. (Paste `%APPDATA%\video-notes\Notes` into
-Explorer's address bar to get there.)
+**All your vaults are used at once.** They are not modes you switch between: every session
+from every vault appears in the same list, and the All sessions tree shows the vault as the
+outermost level, with your folders nested inside it. Only one thing distinguishes them —
+which vault a *new* session goes into, marked "new notes" in Settings and changed with
+**Make default**.
+
+The installed app, the portable exe and a run from source all read the same vaults, so it
+does not matter which you open.
 
 ```
 Notes/
@@ -64,12 +70,34 @@ Notes/
       drawings/                 one PNG per drawing, named for its timestamp
 ```
 
-Grouping a session into a folder on the home screen moves its folder on disk, and the other
-way round works too.
+Grouping a session into a folder moves its folder on disk, and the other way round works
+too. Sessions are stored the same way in every vault, so a vault is just a folder — there
+is nothing special about the one you started with.
+
+### Adding and removing vaults
+
+**Settings → Vaults → Add a vault…** points at any folder. If it already holds notes —
+because a coach shared it, or you kept an old one — its sessions simply appear; there is
+nothing to import.
+
+**Removing a vault only forgets it.** The folder and every note in it stay exactly where
+they are, and adding it again brings them straight back. Nothing in the app ever deletes a
+notes folder.
+
+A vault whose folder has gone — a drive unplugged, a Drive folder not synced yet — is shown
+as missing and its sessions are left out of the list. Your other vaults carry on, and
+nothing in the missing one is written to or emptied while it is away.
+
+### Sharing a vault with other coaches
+
+Put a vault inside Google Drive, Dropbox or OneDrive and have each coach add that folder as
+a vault on their own machine. Everyone's notes land in the same place, and because a session
+is keyed by the video's filename and size, you can each keep your own copy of the footage
+wherever you like and still be looking at the same session.
 
 This folder used to sit beside whichever exe you ran, which sounded tidier than it was:
 installing the app while also running the portable build gave each its own separate notes,
-and they drifted apart within the hour. One fixed location cannot do that.
+and they drifted apart within the hour.
 
 Three consequences worth knowing:
 

@@ -281,6 +281,10 @@
         <input type="text" id="segment-name" maxlength="80"
                placeholder="Jack round 2 &mdash; the scramble">
       </label>
+      <label class="seg-row hidden" id="segment-vault-row">
+        <span class="seg-label">Keep it in</span>
+        <select id="segment-vault"></select>
+      </label>
       <div class="seg-error" id="segment-error" role="alert"></div>
       <div class="seg-actions">
         <button type="button" id="segment-file-btn">Choose a video file&hellip;</button>
@@ -313,6 +317,16 @@
 <div class="lightbox" id="settings-modal">
   <div class="segment-panel">
     <h2>Settings</h2>
+
+    <div class="vault-block">
+      <h3>Vaults</h3>
+      <div class="vault-list" id="vault-list"></div>
+      <button type="button" id="vault-add">Add a vault&hellip;</button>
+      <p class="backup-hint">A vault is a folder your notes live in, and all of them are
+        used at once. A vault inside Google Drive or Dropbox is how several coaches share
+        one set of notes &mdash; point everyone at the same folder. Removing a vault here
+        only forgets it: the folder and everything in it stays exactly where it is.</p>
+    </div>
 
     <div class="who-block">
       <h3>Who is commenting</h3>

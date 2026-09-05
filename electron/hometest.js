@@ -195,7 +195,7 @@ app.whenReady().then(() => {
       const renamed = await run(win, `(async function(){
         var v = await window.storage.get('vnotes:index');
         var lib = JSON.parse(v.value);
-        return lib.filter(function(e){ return e.key === 'vnotes:e.mp4_5'; })[0].customName;
+        return lib.filter(function(e){ return e.key.split('|').pop() === 'vnotes:e.mp4_5'; })[0].customName;
       })()`);
       check('a session can be renamed from the tree', renamed === 'Renamed in the tree', renamed);
 
@@ -239,7 +239,7 @@ app.whenReady().then(() => {
       const madeClip = await run(win, `(async function(){
         var v = await window.storage.get('vnotes:index');
         return JSON.parse(v.value).filter(function(e){
-          return e.key === 'vnotes:yt:dQw4w9WgXcQ@90.00-240.00'; })[0] || null;
+          return e.key.split('|').pop() === 'vnotes:yt:dQw4w9WgXcQ@90.00-240.00'; })[0] || null;
       })()`);
       check('a segment made from the modal is keyed to its bounds',
             madeClip && madeClip.segment.start === 90 && madeClip.segment.end === 240,
@@ -262,7 +262,7 @@ app.whenReady().then(() => {
       const madeFull = await run(win, `(async function(){
         var v = await window.storage.get('vnotes:index');
         return JSON.parse(v.value).filter(function(e){
-          return e.key === 'vnotes:yt:abcdefghijk'; })[0] || null;
+          return e.key.split('|').pop() === 'vnotes:yt:abcdefghijk'; })[0] || null;
       })()`);
       check('the same form opens a whole video when the box is clear',
             madeFull && !madeFull.segment, JSON.stringify(madeFull));
