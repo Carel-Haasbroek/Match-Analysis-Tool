@@ -431,6 +431,12 @@ input[type=file]{ display:none; }
 .lb-cmt{ margin-top:6px; }
 .lightbox-actions{ display:flex; gap:8px; margin-top:14px; justify-content:flex-end; flex-wrap:wrap; }
 
+/* Shown in place of the whole app when it is opened outside the desktop shell. */
+.needs-desktop{ max-width:520px; margin:14vh auto; padding:0 24px; text-align:center; }
+.needs-desktop h1{ font-size:1.3rem; margin:0 0 14px; color:var(--accent); }
+.needs-desktop p{ color:var(--text-dim); font-size:.9rem; line-height:1.6; margin:0 0 12px; }
+.needs-desktop a{ color:var(--accent); }
+
 /* ---------- a segment made from a link ---------- */
 .url-extra{ margin-top:8px; }
 .segment-panel{ background:var(--panel); border:1px solid var(--border);

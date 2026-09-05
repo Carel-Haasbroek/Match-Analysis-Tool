@@ -38,12 +38,8 @@ echo   Node.js was not found on your PATH, so the desktop app cannot start.
 echo.
 echo   Install it from https://nodejs.org/ (the LTS build is fine), then run this again.
 echo.
-echo   To use the browser version instead, serve this folder over http:// with any
-echo   static server, for example:
-echo.
-echo       python -m http.server 8000
-echo.
-echo   ...then open http://localhost:8000/app.html
+echo   Or install the packaged app instead - it needs no Node at all:
+echo   https://github.com/Carel-Haasbroek/Match-Analysis-Tool/releases/latest
 echo.
 pause
 goto done

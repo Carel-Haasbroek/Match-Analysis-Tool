@@ -12,7 +12,6 @@
     <h1>Video Notes</h1>
     <div class="sep"></div>
     <button type="button" id="load-btn">Load video</button>
-    <input type="file" id="file-input" accept="video/*">
     <form class="url-field" id="top-url-form">
       <input type="text" id="top-url-input" placeholder="Paste a YouTube link" spellcheck="false" aria-label="YouTube link">
       <button type="submit">Open</button>
@@ -43,15 +42,6 @@
         <div class="or">or</div>
         <button type="button" id="empty-load-btn">Choose a video file</button>
         <p class="home-hint">Your notes stay on this device &mdash; nothing is uploaded.</p>
-
-        <div class="file-note hidden" id="file-note">
-          <strong>YouTube links need a local server.</strong>
-          This page is open straight from a file, and YouTube refuses to embed into a
-          <code>file://</code> page (it answers with &ldquo;error 153&rdquo;). Double-click
-          <code>serve.cmd</code> in this folder to open the desktop app instead, which has no
-          such restriction. To stay in a browser, serve this folder over <code>http://</code>
-          with any static server. Local video files work fine either way.
-        </div>
 
         <div class="who-block">
           <h3>Who is commenting</h3>

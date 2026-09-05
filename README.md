@@ -77,9 +77,10 @@ Three consequences worth knowing:
 - Notes from before this layout, in `%APPDATA%\video-notes\store`, are moved across
   automatically the first time you run the app. The old copy is left exactly where it was
   and a backup is written first, so the move cannot cost you anything.
-- Notes made in the **browser** version (now deprecated) live somewhere else entirely —
-  the browser's own per-site storage. They do not appear in the desktop app. To carry them
-  across, use **Export all notes** in the browser and **Import backup** in the app.
+- Notes made in the old **browser** version are not reachable from here. They sit in the
+  browser's own per-site storage, and the code that could read them is gone — `c1efaeb` is
+  the last commit that still had it. If you need them, check that out, serve the folder over
+  `http://`, use **Export all notes** there, then **Import backup** in the app.
 
 ### Backing up
 
@@ -129,23 +130,6 @@ Use `npm version` rather than tagging by hand. electron-builder names every arti
 `package.json`, never from the tag, so a tag that disagrees with it publishes a release full
 of files from the wrong version — the workflow refuses to build in that case rather than
 letting it happen quietly.
-
-### The browser version — deprecated
-
-**The desktop app is the only supported way to run this.** The page still happens to work
-in a browser, and nothing has been torn out, but it gets no new features and is not tested
-or fixed. Treat anything you find there as unsupported.
-
-It was always the weaker half: notes go to the browser's own per-site storage rather than
-the `Notes` folder, so they are invisible to the desktop app and to every other browser;
-you have to re-pick a local video every session, because a page cannot remember a file
-path; and YouTube refuses to embed into a `file://` page, so it needs a static server in
-front of it just to work at all.
-
-If you have notes stranded in a browser, get them out with **Export all notes** there and
-**Import backup** in the desktop app before it goes for good.
-
----
 
 ## Using it
 
@@ -212,6 +196,9 @@ npm run icon                      # regenerates build/icon.ico from build/make-i
 
 The app itself is three files — `app.html`, `styles.css`, `app.js` — with no build
 step and no framework. `electron/` adds the desktop shell: a loopback server (which is what
-lets YouTube embed and lets local video stream with seeking), a file-backed store, and a
-preload bridge. Adding `?test=1` to the URL routes all storage to a throwaway database, so
-tests can never touch real notes.
+lets YouTube embed and lets local video stream with seeking), a folder-backed store, and a
+preload bridge. Opening `app.html` outside that shell now shows a "needs the desktop app"
+page rather than half-working.
+
+Every Electron test points `userData` at a temporary directory, which is what keeps them
+off your real notes folder.

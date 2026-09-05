@@ -1,12 +1,29 @@
 (function(){
   "use strict";
 
+  /* The browser build is gone. Without the preload bridge there is no storage, no way
+     to open a video by path, and no loopback server for YouTube to embed into - so say
+     so plainly instead of failing piecemeal halfway through boot. */
+  if (!window.storage || typeof window.storage.get !== 'function' ||
+      !window.desktop || typeof window.desktop.openVideo !== 'function'){
+    document.body.innerHTML =
+      '<div class="needs-desktop">' +
+        '<h1>This needs the desktop app</h1>' +
+        '<p>Video Notes used to run as a plain web page too. That version is gone: notes ' +
+        'live in a folder on disk, videos are remembered by their path, and YouTube will ' +
+        'not embed without the app\u2019s own local server.</p>' +
+        '<p><a href="https://github.com/Carel-Haasbroek/Match-Analysis-Tool/releases/latest">' +
+        'Download the latest release</a></p>' +
+      '</div>';
+    return;
+  }
+
   var $ = function(id){ return document.getElementById(id); };
 
   var video = $('video'), ytHolder = $('yt-holder');
   var canvas = $('draw-canvas'), ctx = canvas.getContext('2d');
   var frameBuf = document.createElement('canvas'), fctx = frameBuf.getContext('2d');
-  var fileInput = $('file-input'), fileNameEl = $('file-name'), statusEl = $('status');
+  var fileNameEl = $('file-name'), statusEl = $('status');
   var homeView = $('home'), startClose = $('start-close'), videoWrap = $('video-wrap');
   var workspace = document.querySelector('.workspace');
   var recentList = $('recent-list'), urlInput = $('url-input'), topUrlInput = $('top-url-input');
@@ -26,7 +43,7 @@
       lightboxText = $('lightbox-text');
 
   var notes = [], videoKey = null, currentLabel = '';
-  var player = null, source = null, library = [], pendingKey = null, pendingNotice = '';
+  var player = null, source = null, library = [], pendingNotice = '';
   var drawing = false, shapes = [], activeShape = null, startPt = null;
   var tool = 'pen', color = '#ff2d78', size = 3, capturedTime = 0, lightboxNote = null;
   var hasFrame = false, reviewNote = null, overlayKey = null;
@@ -61,101 +78,40 @@
     { id:'paper',     name:'Paper',      swatch:['#f4f1ea','#b5341f','#2f6f5e'] },
     { id:'vapor',     name:'Vaporwave',  swatch:['#2b1055','#ff8ad8','#7ef0e0'] }
   ];
-  var IS_FILE = location.protocol === 'file:';
-  /* Present only under Electron; its absence keeps every browser path untouched. */
-  var DESKTOP = (typeof window.desktop === 'object' && window.desktop &&
-                 typeof window.desktop.openVideo === 'function') ? window.desktop : null;
+  /* The preload bridge. Guaranteed by the check at the top of this file. */
+  var DESKTOP = window.desktop;
 
   /* How long a note's drawing stays on screen once the playhead reaches it,
      in seconds. User-adjustable; persisted in PREFS_KEY. */
   var overlayHold = 1;
   var HOLD_MIN = 0.01, HOLD_MAX = 2, PREFS_KEY = 'vnotes:prefs';
 
-  /* Adding ?test=1 to the URL moves every read and write to a throwaway database,
-     so automated checks can never reach real notes. Never remove this. */
-  var TEST_MODE = /[?&]test=1\b/.test(location.search);
-  var DB_NAME = TEST_MODE ? 'video-notes-test' : 'video-notes';
-  var KEY_PREFIX = TEST_MODE ? 'test:' : '';
+  /* Tests get their own notes folder by pointing Electron's userData somewhere
+     temporary, so there is nothing to keep separate in here. */
 
-  /* ---------- storage: window.storage -> IndexedDB -> memory ---------- */
-  var memStore = {};
-  var store = (function(){
-    var hasWinStorage = (typeof window.storage === 'object' && window.storage &&
-                         typeof window.storage.get === 'function');
-    var db = null, dbReady = null;
-
-    function openDB(){
-      if (dbReady) return dbReady;
-      dbReady = new Promise(function(resolve){
-        try{
-          var req = indexedDB.open(DB_NAME, 1);
-          req.onupgradeneeded = function(){
-            req.result.createObjectStore('notes');
-          };
-          req.onsuccess = function(){ db = req.result; resolve(true); };
-          req.onerror = function(){ resolve(false); };
-        }catch(e){ resolve(false); }
-      });
-      return dbReady;
+  /* ---------- storage ---------- */
+  /* One tier: the preload bridge onto the folder store on disk. Values cross it as
+     JSON strings. It used to fall back to IndexedDB and then to memory, for the
+     browser build that no longer exists. */
+  var store = {
+    label: 'saved on this device',
+    get: function(key){
+      return window.storage.get(key)
+        .then(function(r){ return r && r.value ? JSON.parse(r.value) : null; })
+        .catch(function(){ return null; });
+    },
+    set: function(key, value){
+      return window.storage.set(key, JSON.stringify(value)).catch(function(){});
+    },
+    /* Every stored key - used only to build a full backup. */
+    keys: function(){
+      return Promise.resolve(window.storage.keys())
+        .then(function(list){
+          return (list || []).filter(function(k){ return typeof k === 'string'; });
+        })
+        .catch(function(){ return []; });
     }
-
-    function idbOp(mode, fn){
-      return openDB().then(function(ok){
-        if (!ok || !db) return null;
-        return new Promise(function(resolve){
-          try{
-            var tx = db.transaction('notes', mode);
-            var req = fn(tx.objectStore('notes'));
-            req.onsuccess = function(){ resolve(req.result); };
-            req.onerror = function(){ resolve(null); };
-          }catch(e){ resolve(null); }
-        });
-      });
-    }
-
-    return {
-      label: hasWinStorage ? 'saved in this session' : 'saved on this device',
-      get: function(key){
-        var k = KEY_PREFIX + key;
-        if (hasWinStorage){
-          return window.storage.get(k, false)
-            .then(function(r){ return r && r.value ? JSON.parse(r.value) : null; })
-            .catch(function(){ return memStore[k] || null; });
-        }
-        return idbOp('readonly', function(s){ return s.get(k); })
-          .then(function(v){ return v != null ? v : (memStore[k] || null); });
-      },
-      set: function(key, value){
-        var k = KEY_PREFIX + key;
-        memStore[k] = value;
-        if (hasWinStorage){
-          return window.storage.set(k, JSON.stringify(value), false).catch(function(){});
-        }
-        return idbOp('readwrite', function(s){ return s.put(value, k); });
-      },
-      /* Every stored key, unprefixed — used only to build a full backup.
-         A host store must expose keys() of its own: falling back to memStore would
-         quietly reduce "back up everything" to "back up what I opened today". */
-      keys: function(){
-        var source;
-        if (hasWinStorage && typeof window.storage.keys === 'function'){
-          source = Promise.resolve(window.storage.keys()).catch(function(){
-            return Object.keys(memStore);
-          });
-        } else if (hasWinStorage){
-          source = Promise.resolve(Object.keys(memStore));
-        } else {
-          source = idbOp('readonly', function(s){ return s.getAllKeys(); });
-        }
-        return source.then(function(list){
-          if (!list) list = Object.keys(memStore);
-          return list.filter(function(k){
-            return typeof k === 'string' && k.indexOf(KEY_PREFIX) === 0;
-          }).map(function(k){ return k.slice(KEY_PREFIX.length); });
-        });
-      }
-    };
-  })();
+  };
 
   /* ---------- helpers ---------- */
   function fmt(sec){
@@ -748,13 +704,6 @@
       setNotice('That does not look like a YouTube link.');
       return false;
     }
-    /* YouTube refuses to embed into a file:// page (null origin -> error 153).
-       Say so plainly rather than handing the user YouTube's own error screen. */
-    if (IS_FILE){
-      setNotice('YouTube needs this page served over http:// — see the note on the start screen.', 20000);
-      showStart();
-      return false;
-    }
     var known = null;
     for (var i = 0; i < library.length; i++){
       if (library[i].key === 'vnotes:yt:' + p.videoId){ known = library[i]; break; }
@@ -765,21 +714,12 @@
 
   /* ---------- picking a file ---------- */
   function chooseVideo(expectKey){
-    if (!DESKTOP){ pendingKey = expectKey || null; fileInput.click(); return; }
     DESKTOP.openVideo().then(function(info){
       if (info) loadFilePath(info, expectKey || null);
     });
   }
   $('load-btn').addEventListener('click', function(){ chooseVideo(null); });
   $('empty-load-btn').addEventListener('click', function(){ chooseVideo(null); });
-
-  fileInput.addEventListener('change', function(e){
-    var f = e.target.files && e.target.files[0];
-    var expect = pendingKey;
-    pendingKey = null;
-    if (f) loadFileVideo(f, expect);
-    fileInput.value = '';
-  });
 
   videoWrap.addEventListener('dragover', function(e){ e.preventDefault(); });
   videoWrap.addEventListener('drop', function(e){
@@ -859,17 +799,14 @@
       }
       return;
     }
-    if (DESKTOP && entry.filePath){
+    if (entry.filePath){
       DESKTOP.statVideo(entry.filePath).then(function(info){
         if (info){ loadFilePath(info, entry.key); return; }
         markUnavailable(entry);
       });
       return;
     }
-    if (DESKTOP){ chooseVideo(entry.key); return; }
-    pendingKey = entry.key;
-    setNotice('Choose "' + (entry.fileName || autoName(entry)) + '" again to reopen its notes.');
-    fileInput.click();
+    chooseVideo(entry.key);
   }
 
   /* The video has moved or its drive is not connected. Say which file, and offer to
@@ -882,7 +819,6 @@
   }
 
   function relocate(entry){
-    if (!DESKTOP) return;
     DESKTOP.openVideo().then(function(info){
       if (!info) return;
       delete entry.missing;
@@ -974,7 +910,7 @@
       if (entry.lastOpened) bits.push(relTime(entry.lastOpened));
       /* once renamed, still say which video it is */
       if (entry.customName && entry.customName.trim()) bits.push(autoName(entry));
-      if (entry.kind === 'file' && !(DESKTOP && entry.filePath)) bits.push('pick the file again');
+      if (entry.kind === 'file' && !entry.filePath) bits.push('pick the file again');
       meta.textContent = bits.join(' · ');
       if (entry.missing && entry.filePath){
         row.classList.add('missing');
@@ -1020,7 +956,7 @@
         input.addEventListener('blur', function(){ commit(true); });
       }
 
-      if (entry.missing && DESKTOP){
+      if (entry.missing){
         var loc = document.createElement('button');
         loc.type = 'button';
         loc.className = 'recent-locate';
@@ -1088,7 +1024,7 @@
     if (!entry.folder) delete entry.folder;
     saveLibrary();
     /* on the desktop the folder is real: move the directory to match */
-    if (DESKTOP && DESKTOP.moveSession){
+    if (DESKTOP.moveSession){
       DESKTOP.moveSession(entry.key, entry.folder || '').then(function(){ renderRecent(); });
     } else {
       renderRecent();
@@ -2747,11 +2683,10 @@
     document.body.appendChild(a); a.click(); a.remove();
   });
 
-  if (IS_FILE) $('file-note').classList.remove('hidden');
 
   /* Show where the notes actually live, and let it be opened. Also surface what the
      first run did with them, since a silent migration of real work is unnerving. */
-  if (DESKTOP && DESKTOP.dataDir){
+  if (DESKTOP.dataDir){
     DESKTOP.dataDir().then(function(info){
       if (!info) return;
       var el = $('notes-folder');
