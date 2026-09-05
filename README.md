@@ -77,9 +77,9 @@ Three consequences worth knowing:
 - Notes from before this layout, in `%APPDATA%\video-notes\store`, are moved across
   automatically the first time you run the app. The old copy is left exactly where it was
   and a backup is written first, so the move cannot cost you anything.
-- Notes made in the **browser** version live somewhere else entirely (the browser's own
-  storage, per site). They do not appear in the desktop app. To carry them across, use
-  **Export all notes** in the browser and **Import backup** in the app.
+- Notes made in the **browser** version (now deprecated) live somewhere else entirely —
+  the browser's own per-site storage. They do not appear in the desktop app. To carry them
+  across, use **Export all notes** in the browser and **Import backup** in the app.
 
 ### Backing up
 
@@ -130,19 +130,20 @@ Use `npm version` rather than tagging by hand. electron-builder names every arti
 of files from the wrong version — the workflow refuses to build in that case rather than
 letting it happen quietly.
 
-### The browser version
+### The browser version — deprecated
 
-The same app runs as a plain web page, but it must be served over `http://` — YouTube
-refuses to embed into a `file://` page, and opening `app.html` directly gives
-"error 153". Any static server works:
+**The desktop app is the only supported way to run this.** The page still happens to work
+in a browser, and nothing has been torn out, but it gets no new features and is not tested
+or fixed. Treat anything you find there as unsupported.
 
-```bash
-python -m http.server 8000
-```
+It was always the weaker half: notes go to the browser's own per-site storage rather than
+the `Notes` folder, so they are invisible to the desktop app and to every other browser;
+you have to re-pick a local video every session, because a page cannot remember a file
+path; and YouTube refuses to embed into a `file://` page, so it needs a static server in
+front of it just to work at all.
 
-Then open <http://localhost:8000/app.html>. Local video files work either way; only
-YouTube needs the server. In the browser you also have to re-pick a local video each session
-— remembering the file's path is the main thing the desktop app adds.
+If you have notes stranded in a browser, get them out with **Export all notes** there and
+**Import backup** in the desktop app before it goes for good.
 
 ---
 
