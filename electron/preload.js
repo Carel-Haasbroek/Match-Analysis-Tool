@@ -1,6 +1,6 @@
 'use strict';
 
-const { contextBridge, ipcRenderer } = require('electron');
+const { contextBridge, ipcRenderer, webUtils } = require('electron');
 
 /*
  * window.storage is deliberately the shape app.js already probes for, so the
@@ -18,6 +18,12 @@ contextBridge.exposeInMainWorld('storage', {
 /* Everything the browser cannot do. Its presence is how app.js detects desktop. */
 contextBridge.exposeInMainWorld('desktop', {
   openVideo: () => ipcRenderer.invoke('video:open'),
+  /* Electron 32 removed File.path, so a dropped video has no path the page can see.
+     This is the sanctioned replacement, and it has to live here: webUtils is not
+     available to the page itself. */
+  pathForFile: (file) => {
+    try { return webUtils.getPathForFile(file) || null; } catch (e) { return null; }
+  },
   statVideo: (filePath) => ipcRenderer.invoke('video:stat', filePath),
   dataDir: () => ipcRenderer.invoke('app:dataDir'),
   version: () => ipcRenderer.invoke('app:version'),

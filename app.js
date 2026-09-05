@@ -756,7 +756,20 @@
   videoWrap.addEventListener('drop', function(e){
     e.preventDefault();
     var f = e.dataTransfer.files && e.dataTransfer.files[0];
-    if (f && f.type.indexOf('video/') === 0) loadFileVideo(f, null);
+    if (!f || f.type.indexOf('video/') !== 0) return;
+
+    /* A dropped file used to open without a path, so its session could not find the
+       video again and asked you to pick it - the same action as "Choose a video file"
+       with a quietly worse result. With the path it goes down the identical route. */
+    var p = DESKTOP.pathForFile ? DESKTOP.pathForFile(f) : null;
+    if (p){
+      DESKTOP.statVideo(p).then(function(info){
+        if (info) loadFilePath(info, null);
+        else loadFileVideo(f, null);
+      });
+      return;
+    }
+    loadFileVideo(f, null);
   });
 
   /* ---------- start screen + library ---------- */

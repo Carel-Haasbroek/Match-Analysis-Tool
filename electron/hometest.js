@@ -333,6 +333,44 @@ app.whenReady().then(() => {
       await run(win, `document.getElementById('settings-close').click()`);
       await wait(300);
 
+      /* ---------- 6. a dropped video is remembered like a picked one ---------- */
+      /* Electron 32 removed File.path, so dropping used to open the video and then save
+         a session that could not find it again - the same action as Choose a video file,
+         quietly worse. The drop is synthesised; what is checked is that a path comes back
+         and reaches the library entry. */
+      const DROPPED = path.join(SANDBOX, 'dropped.mp4');
+      fs.copyFileSync(path.join(__dirname, 'fixtures', 'tiny.mp4'), DROPPED);
+      const b64 = fs.readFileSync(DROPPED).toString('base64');
+
+      /* A File built in the page has no filesystem origin, so getPathForFile rightly
+         returns nothing for it and a real drag cannot be synthesised from here. What is
+         checked is the bridge and the fallback; the path itself needs a real drag. */
+      const bridged = await run(win, `typeof window.desktop.pathForFile === 'function'`);
+      check('the preload can turn a dropped file into a path', bridged, String(bridged));
+
+      await run(win, `(function(){
+        var bin = atob(${JSON.stringify(b64)});
+        var bytes = new Uint8Array(bin.length);
+        for (var i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+        var file = new File([bytes], 'dropped.mp4', { type: 'video/mp4' });
+        var dt = new DataTransfer();
+        dt.items.add(file);
+        document.getElementById('video-wrap').dispatchEvent(
+          new DragEvent('drop', { dataTransfer: dt, bubbles: true, cancelable: true }));
+      })()`);
+      await wait(3500);
+
+      const dropped = await run(win, `(async function(){
+        var v = await window.storage.get('vnotes:index');
+        var e = JSON.parse(v.value).filter(function(x){
+          return (x.fileName || '') === 'dropped.mp4'; })[0];
+        return e ? { path: e.filePath, key: e.key } : null;
+      })()`);
+      check('dropping a video still opens it when no path can be had',
+            !!dropped, JSON.stringify(dropped));
+      check('and it is keyed by name and size like any other file session',
+            dropped && /vnotes:dropped\.mp4_/.test(dropped.key), JSON.stringify(dropped));
+
       check('nothing threw along the way', errors.length === 0, errors.join(' | '));
 
     } catch (err) {
