@@ -271,6 +271,10 @@ input[type=file]{ display:none; }
 .recent-label{ font-size:.87rem; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
 .recent-meta{ color:var(--text-dim); font-size:.76rem; margin-top:2px; }
 .recent-edit,
+.recent-delete{ background:transparent; border:none; color:var(--text-dim);
+  padding:3px 6px; opacity:0; font-size:.85rem; }
+.recent-row:hover .recent-delete{ opacity:1; }
+.recent-delete:hover{ color:var(--danger); box-shadow:none; background:transparent; }
 .recent-forget{ background:transparent; border:none; color:var(--text-dim); padding:3px 6px; flex-shrink:0; }
 .recent-edit{ opacity:0; transition:opacity .15s ease, color .15s ease; }
 .recent-row:hover .recent-edit{ opacity:1; }

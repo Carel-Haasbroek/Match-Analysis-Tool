@@ -53,6 +53,8 @@ ipcMain.handle('store:keys', () => store.keys());
 /* Who is writing. Every note and comment this app saves goes in that coach's own file,
    which is what lets a vault be shared without two machines touching one file. */
 ipcMain.handle('store:author', (e, author) => { store.setAuthor(author); return true; });
+/* Removes a session's notes for good. The renderer confirms first; this does not. */
+ipcMain.handle('store:delete', (e, key) => store.delete(key));
 
 /* where the notes actually are, and what the first run did with them */
 ipcMain.handle('app:dataDir', () => ({

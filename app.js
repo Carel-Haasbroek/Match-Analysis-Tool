@@ -819,6 +819,23 @@
     renderRecent();
   }
 
+  /* The one thing in the app that destroys notes, so it says so plainly and says how
+     many. In a shared vault only this coach's own files go; the others' stay. */
+  function deleteSession(entry){
+    if (!DESKTOP.remove) return;
+    var n = entry.noteCount || 0;
+    var what = n ? n + ' note' + (n === 1 ? '' : 's') : 'no notes';
+    if (!confirm('Delete “' + entryName(entry) + '” and its ' + what + '?\n\n' +
+                 'This cannot be undone. If the vault is shared, only the notes you ' +
+                 'wrote are removed — the other coaches keep theirs.')) return;
+
+    DESKTOP.remove(entry.key).then(function(){
+      if (videoKey === entry.key){ notes = []; renderNotes(); renderMarks(); }
+      forgetEntry(entry.key);
+      setNotice('Deleted “' + entryName(entry) + '”.');
+    });
+  }
+
   function forgetEntry(key){
     library = library.filter(function(e){ return e.key !== key; });
     saveLibrary();
@@ -1132,8 +1149,20 @@
       forget.type = 'button';
       forget.className = 'recent-forget';
       forget.textContent = '✕';
-      forget.title = 'Forget this entry';
+      forget.title = 'Forget this entry - the notes stay on disk';
       forget.addEventListener('click', function(e){ e.stopPropagation(); forgetEntry(entry.key); });
+
+      /* Forget hides a session and keeps its notes; this is the other one, and the
+         wording has to make the difference obvious because the buttons sit together. */
+      var burn = document.createElement('button');
+      burn.type = 'button';
+      burn.className = 'recent-delete';
+      burn.textContent = '🗑';
+      burn.title = 'Delete this session and its notes';
+      burn.addEventListener('click', function(e){
+        e.stopPropagation();
+        deleteSession(entry);
+      });
 
       /* choosing a folder moves the session's directory on disk, so what you see
          in the app and what you see in Explorer stay the same thing */
@@ -1167,6 +1196,7 @@
       row.appendChild(move);
       row.appendChild(rename);
       row.appendChild(forget);
+      row.appendChild(burn);
       row.addEventListener('click', function(){
         if (main.querySelector('.recent-rename')) return;   /* mid-edit */
         closeSessionsModal();
