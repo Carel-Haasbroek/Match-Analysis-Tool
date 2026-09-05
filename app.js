@@ -258,6 +258,26 @@
     };
   }
 
+  /* What people actually type for a timestamp: 90, 1:30, 1:02:03, 2:05.5, or
+     YouTube's own 1h2m3s. Returns null for anything it cannot read, so the caller
+     can tell "nothing entered" from "zero". */
+  function parseClock(v){
+    v = String(v == null ? '' : v).trim();
+    if (!v) return null;
+    if (/^\d+(?:\.\d+)?$/.test(v)) return parseFloat(v);
+    var m = /^(?:(\d+):)?(\d{1,2}):(\d{1,2}(?:\.\d+)?)$/.exec(v);
+    if (m){
+      var mins = +m[2], secs = parseFloat(m[3]);
+      if (mins > 59 || secs >= 60) return null;
+      return (+(m[1] || 0)) * 3600 + mins * 60 + secs;
+    }
+    if (/^(?:\d+h)?(?:\d+m)?(?:\d+s)?$/i.test(v)){
+      var t = parseTimeParam(v);
+      if (t) return t;
+    }
+    return null;
+  }
+
   /* ---------- source: local file ---------- */
   /* src is { url, revoke }: a browser passes an object URL that must be revoked,
      the desktop passes a /media stream URL that must not be. */
@@ -1657,6 +1677,71 @@
     if (lightboxNote && lightboxNote.id === note.id) openLightbox(note);
     if (summaryModal.classList.contains('open')) renderSummaryModalList();
   }
+
+  /* ---------- making a segment straight from a link ---------- */
+  /* The clip machinery already exists for marking in and out inside a video; this is
+     the same thing without having to load the whole match first. Same key, so a
+     segment made twice is the same session rather than a second empty one. */
+  var segmentModal = $('segment-modal');
+
+  function openSegmentModal(){
+    $('segment-error').textContent = '';
+    segmentModal.classList.add('open');
+    setTimeout(function(){ $('segment-url').focus(); }, 30);
+  }
+  function closeSegmentModal(){ segmentModal.classList.remove('open'); }
+
+  function segmentError(msg, focusId){
+    $('segment-error').textContent = msg;
+    if (focusId) $(focusId).focus();
+  }
+
+  $('segment-btn').addEventListener('click', openSegmentModal);
+  $('segment-cancel').addEventListener('click', closeSegmentModal);
+  segmentModal.addEventListener('click', function(e){
+    if (e.target === segmentModal) closeSegmentModal();
+  });
+  /* the global Escape handler steps aside for form fields, so handle it here */
+  segmentModal.addEventListener('keydown', function(e){
+    if (e.key === 'Escape'){ e.stopPropagation(); closeSegmentModal(); }
+  });
+
+  $('segment-form').addEventListener('submit', function(e){
+    e.preventDefault();
+    var link = parseYouTube($('segment-url').value);
+    if (!link){
+      segmentError('That does not look like a YouTube link.', 'segment-url');
+      return;
+    }
+
+    var startRaw = $('segment-start').value.trim();
+    /* an empty start means the beginning - or wherever the link itself points */
+    var start = startRaw ? parseClock(startRaw) : (link.startAt || 0);
+    if (start === null){
+      segmentError('Read the start as 1:30, 1:02:03 or a number of seconds.', 'segment-start');
+      return;
+    }
+    var end = parseClock($('segment-end').value);
+    if (end === null){
+      segmentError('Give the segment an end - 4:00, 1:02:03 or a number of seconds.',
+                   'segment-end');
+      return;
+    }
+    if (end <= start){
+      segmentError('The end has to come after the start.', 'segment-end');
+      return;
+    }
+
+    var name = $('segment-name').value.trim();
+    closeSegmentModal();
+    loadYouTubeClip(link.videoId, start, end, name || null);
+    setNotice('Segment ' + fmt(start) + '-' + fmt(end) + '. Marks you make are timed from ' +
+              'the start of the segment.', 9000);
+    $('segment-url').value = '';
+    $('segment-start').value = '';
+    $('segment-end').value = '';
+    $('segment-name').value = '';
+  });
 
   /* ---------- who is commenting ---------- */
   function refreshWho(){

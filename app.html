@@ -37,6 +37,9 @@
           <input type="text" id="url-input" placeholder="https://www.youtube.com/watch?v=&hellip;" spellcheck="false" aria-label="YouTube link">
           <button type="submit" class="primary">Open link</button>
         </form>
+        <div class="url-extra">
+          <button type="button" id="segment-btn">Just a segment of a link&hellip;</button>
+        </div>
         <div class="or">or</div>
         <button type="button" id="empty-load-btn">Choose a video file</button>
         <p class="home-hint">Your notes stay on this device &mdash; nothing is uploaded.</p>
@@ -290,6 +293,45 @@
         <div class="summary-status" id="summary-modal-status"></div>
       </section>
     </div>
+  </div>
+</div>
+
+<div class="lightbox" id="segment-modal">
+  <div class="segment-panel">
+    <h2>A segment of a YouTube video</h2>
+    <p class="name-hint">Marks and drawings are kept against the segment's own clock, so
+      0:00 is where it starts. Making the same segment twice reopens the session you
+      already have, notes and all.</p>
+    <form class="segment-form" id="segment-form">
+      <label class="seg-row">
+        <span class="seg-label">Link</span>
+        <input type="text" id="segment-url" spellcheck="false"
+               placeholder="https://www.youtube.com/watch?v=&hellip;">
+      </label>
+      <div class="seg-times">
+        <label class="seg-row">
+          <span class="seg-label">Start</span>
+          <input type="text" id="segment-start" spellcheck="false" placeholder="1:30">
+        </label>
+        <label class="seg-row">
+          <span class="seg-label">End</span>
+          <input type="text" id="segment-end" spellcheck="false" placeholder="4:00">
+        </label>
+      </div>
+      <p class="seg-hint">Times as <code>1:30</code>, <code>1:02:03</code> or a number of
+        seconds. Leave the start empty to begin at the beginning &mdash; or at whatever
+        moment the link itself points to.</p>
+      <label class="seg-row">
+        <span class="seg-label">Name <em>optional</em></span>
+        <input type="text" id="segment-name" maxlength="80"
+               placeholder="Jack round 2 &mdash; the scramble">
+      </label>
+      <div class="seg-error" id="segment-error" role="alert"></div>
+      <div class="seg-actions">
+        <button type="button" id="segment-cancel">Cancel</button>
+        <button type="submit" class="primary">Make the session</button>
+      </div>
+    </form>
   </div>
 </div>
 
