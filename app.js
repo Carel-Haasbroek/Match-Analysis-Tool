@@ -1827,6 +1827,17 @@
   $('sessions-close').addEventListener('click', closeSessionsModal);
   wireModal(sessionsModal, closeSessionsModal);
 
+  /* Help sits over settings rather than replacing it, so closing it puts you back
+     where you were rather than out on the home screen. */
+  var helpModal = $('help-modal');
+  function closeHelp(){ helpModal.classList.remove('open'); }
+  $('help-btn').addEventListener('click', function(){
+    helpModal.classList.add('open');
+    $('help-modal').querySelector('.help-body').scrollTop = 0;
+  });
+  $('help-close').addEventListener('click', closeHelp);
+  wireModal(helpModal, closeHelp);
+
   function closeSettings(){ settingsModal.classList.remove('open'); }
   $('settings-btn').addEventListener('click', function(){
     settingsModal.classList.add('open');

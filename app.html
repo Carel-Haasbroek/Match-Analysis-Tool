@@ -358,7 +358,83 @@
     </div>
 
     <div class="seg-actions">
+      <button type="button" id="help-btn">Help and instructions</button>
+      <span class="grow"></span>
       <button type="button" id="settings-close">Close</button>
+    </div>
+  </div>
+</div>
+
+<div class="lightbox" id="help-modal">
+  <div class="help-panel">
+    <header class="help-head">
+      <h2>Help and instructions</h2>
+      <span class="grow"></span>
+      <button type="button" id="help-close">Close</button>
+    </header>
+
+    <div class="help-body">
+      <h3>Starting a session</h3>
+      <p><strong>+ New session</strong> on the home screen takes a YouTube link or a video
+        file from this machine. Tick <em>Only part of this video</em> and give a start and
+        an end to work on one passage &mdash; marks are then timed from the start of that
+        segment, so 0:00 is where it begins.</p>
+      <p>A session is one video and everything you have written about it. Opening the same
+        video again always reopens the same session: local files are recognised by their
+        name and size, so it does not matter where the file sits on disk.</p>
+
+      <h3>Marking a moment</h3>
+      <p>Pause where you want, click <strong>Mark this moment</strong>, draw on the frame
+        with the pen, arrow or box, type a note if you want one, and save. The drawing is
+        pinned to that timestamp.</p>
+
+      <h3>While you watch</h3>
+      <p>Each drawing reappears as playback reaches its moment and clears again shortly
+        after. The <strong>Hold</strong> slider under the video sets how long, from a flash
+        to two seconds. The note's text shows across the bottom of the picture; the chevron
+        collapses it, and reaching the next note opens it again.</p>
+      <p><strong>Pause at notes</strong> stops playback on every marked moment, which is the
+        quickest way to walk through a match you have already been through once.</p>
+
+      <h3>Keyboard</h3>
+      <table class="help-keys">
+        <tr><td><kbd>Space</kbd></td><td>play / pause</td></tr>
+        <tr><td><kbd>&larr;</kbd> <kbd>&rarr;</kbd></td><td>back / forward five seconds</td></tr>
+        <tr><td><kbd>N</kbd></td><td>play on and stop at the next marked moment</td></tr>
+        <tr><td><kbd>M</kbd></td><td>mute</td></tr>
+        <tr><td><kbd>R</kbd></td><td>rotate the video, for footage shot sideways</td></tr>
+        <tr><td><kbd>Esc</kbd></td><td>clear the drawing on screen, or close what is open</td></tr>
+      </table>
+
+      <h3>Several coaches on one video</h3>
+      <p>Every moment holds a thread rather than one line. The box under a moment in the
+        notes panel adds another comment, and each is signed with the name you set under
+        <strong>Who is commenting</strong>. Two coaches can disagree about the same tackle
+        and you can see who said what.</p>
+
+      <h3>Finding things again</h3>
+      <p>The home screen lists what you opened recently. <strong>All sessions</strong> in the
+        top bar opens the lot, with a search box and your folders drawn as a tree. Put a
+        session in a folder with the dropdown on its row &mdash; that moves its folder on
+        disk too, so what you see here is what you see in Explorer.</p>
+
+      <h3>Vaults</h3>
+      <p>A vault is a folder your notes live in, and all of your vaults are used at once.
+        Sessions from every vault appear in the same list; the only difference between them
+        is which one new sessions go into, marked <em>new notes</em>.</p>
+      <p>To share with other coaches, put a vault inside Google Drive, Dropbox or OneDrive
+        and have each coach add that same folder as a vault on their own machine. Each app
+        writes its own file inside a session, so nobody overwrites anybody, and everyone's
+        notes are merged when a session is opened. Removing a vault only forgets it &mdash;
+        the folder and everything in it stays exactly where it is.</p>
+
+      <h3>Keeping a copy</h3>
+      <p><strong>Export all notes</strong> writes one file holding every note, comment,
+        summary and session name. <strong>Import backup</strong> merges one back in: it only
+        ever adds, so restoring an old backup cannot cost you newer work. That is also how
+        you hand a whole set of notes to somebody who is not sharing a vault.</p>
+      <p><strong>Open shared clip</strong> loads a clip file somebody sent you, and
+        <strong>Make clip</strong> under the video creates one from an in and an out mark.</p>
     </div>
   </div>
 </div>

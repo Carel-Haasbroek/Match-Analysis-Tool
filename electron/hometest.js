@@ -298,6 +298,38 @@ app.whenReady().then(() => {
             settings.who === 'Carel' && settings.themes === 8 &&
             settings.backup === 'Export all notes' && settings.inModal,
             JSON.stringify(settings));
+      /* ---------- 5. help, from settings ---------- */
+      await run(win, `document.getElementById('help-btn').click()`);
+      await wait(500);
+      const help = await run(win, `({
+        open: document.getElementById('help-modal').classList.contains('open'),
+        headings: [].slice.call(document.querySelectorAll('#help-modal .help-body h3'))
+                    .map(function(h){ return h.textContent; }),
+        keys: document.querySelectorAll('#help-modal .help-keys kbd').length,
+        scrolls: getComputedStyle(document.querySelector('#help-modal .help-body')).overflowY,
+        settingsStillOpen: document.getElementById('settings-modal').classList.contains('open')
+      })`);
+      check('settings has a help button that opens instructions', help.open,
+            JSON.stringify(help.open));
+      check('the instructions cover the app, not just one corner of it',
+            help.headings.length >= 7 &&
+            help.headings.some(function(h){ return /vault/i.test(h); }) &&
+            help.headings.some(function(h){ return /keyboard/i.test(h); }),
+            JSON.stringify(help.headings));
+      check('the keyboard shortcuts are listed', help.keys >= 6, String(help.keys));
+      check('long instructions scroll inside the panel', help.scrolls === 'auto', help.scrolls);
+      check('help opens over settings rather than replacing it',
+            help.settingsStillOpen, String(help.settingsStillOpen));
+
+      await run(win, `document.getElementById('help-close').click()`);
+      await wait(300);
+      const afterHelp = await run(win, `({
+        help: document.getElementById('help-modal').classList.contains('open'),
+        settings: document.getElementById('settings-modal').classList.contains('open')
+      })`);
+      check('closing help puts you back in settings',
+            !afterHelp.help && afterHelp.settings, JSON.stringify(afterHelp));
+
       await run(win, `document.getElementById('settings-close').click()`);
       await wait(300);
 
