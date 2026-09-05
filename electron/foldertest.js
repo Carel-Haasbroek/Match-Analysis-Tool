@@ -15,8 +15,6 @@ const { app, BrowserWindow } = require('electron');
 
 const SANDBOX = fs.mkdtempSync(path.join(os.tmpdir(), 'vn-foldertest-'));
 app.setPath('userData', SANDBOX);
-/* resolveDataDir prefers this when the app is not packaged */
-process.env.PORTABLE_EXECUTABLE_DIR = SANDBOX;
 
 require('./main.js');
 

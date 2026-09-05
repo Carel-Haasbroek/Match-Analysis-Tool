@@ -2759,9 +2759,6 @@
       el.title = 'Notes folder (' + info.kind + ') - click to open';
       el.classList.remove('hidden');
       el.addEventListener('click', function(){ DESKTOP.reveal(info.dir); });
-      if (info.fellBack){
-        setNotice('Could not write beside the app, so notes are in ' + info.dir, 20000);
-      }
       var m = info.migration;
       if (m && m.migrated){
         setNotice(m.intact

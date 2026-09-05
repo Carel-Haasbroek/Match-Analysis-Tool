@@ -6,6 +6,8 @@ on:
   push:
     tags:
       - 'v*'
+  # so a tag made in the web UI, or a run that needs repeating, can be started by hand
+  workflow_dispatch:
 
 permissions:
   contents: write        # the default token is read-only; creating a Release needs write
@@ -23,14 +25,24 @@ jobs:
           node-version: 22
           cache: npm
 
-      # electron-builder names every artifact, and writes latest.yml, from the version
-      # in package.json - never from the tag. Left unchecked, tagging v1.0.2 without
-      # bumping package.json publishes a v1.0.2 release full of 1.0.1 files, which is
-      # confusing to find and annoying to undo. `npm version` keeps the two in step;
-      # this catches a tag made by hand.
-      - name: Tag must match package.json
+      # Two ways this goes wrong, both caught here rather than halfway through a build.
+      #
+      # A run started by hand defaults to a branch, and there is no version to publish
+      # under on a branch - pick the tag in the "Run workflow" dropdown instead.
+      #
+      # And electron-builder names every artifact, and writes latest.yml, from the
+      # version in package.json - never from the tag. Left unchecked, tagging v1.0.2
+      # without bumping package.json publishes a v1.0.2 release full of 1.0.1 files,
+      # which is confusing to find and annoying to undo. `npm version` keeps the two in
+      # step; this catches a tag made by hand.
+      - name: Must be a version tag that matches package.json
         shell: bash
         run: |
+          if [[ "$GITHUB_REF" != refs/tags/* ]]; then
+            echo "This has to run on a tag, not on $GITHUB_REF_NAME."
+            echo "Actions -> Release -> Run workflow -> choose the tag in the dropdown."
+            exit 1
+          fi
           tag="${GITHUB_REF_NAME#v}"
           pkg="$(node -p "require('./package.json').version")"
           if [ "$tag" != "$pkg" ]; then

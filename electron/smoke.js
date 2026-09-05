@@ -9,8 +9,15 @@
  * otherwise only show up as a blank window.
  */
 
+const fs = require('fs');
+const os = require('os');
 const path = require('path');
 const { app, BrowserWindow } = require('electron');
+
+/* Its own notes folder: the window and the server are what this checks, not where
+   notes live, and it writes a probe key that has no business in the real folder. */
+const SANDBOX = fs.mkdtempSync(path.join(os.tmpdir(), 'vn-smoke-'));
+app.setPath('userData', SANDBOX);
 
 process.env.VN_SMOKE = '1';
 require('./main.js');

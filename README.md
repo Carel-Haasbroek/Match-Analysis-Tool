@@ -34,9 +34,9 @@ confused:
 The portable exe shows the same warning on first run, and is dismissed the same way.
 Signing the build would remove it, but that needs a paid certificate.
 
-Copy the portable exe somewhere of its own before you use it — **not** left inside `dist/`.
-It keeps your notes in a `Notes` folder beside itself, and `dist/` is build output that a
-rebuild or a clean-up can empty.
+Copy the portable exe somewhere of its own before you use it — **not** left inside `dist/`,
+which a rebuild can empty. Wherever you put it, it reads the same notes as the installed
+app; nothing is stored beside the exe.
 
 Uninstall through Settings → Apps, or the uninstaller in the install folder. **Uninstalling
 does not delete your notes** — see below.
@@ -45,9 +45,13 @@ does not delete your notes** — see below.
 
 ## Where your notes live
 
-In a **`Notes` folder beside the app** — a plain folder tree you can open, browse, copy to a
+In **`%APPDATA%\video-notes\Notes`** — a plain folder tree you can open, browse, copy to a
 USB stick or put in Dropbox. The home screen shows the exact path at the top; click it to
 open the folder.
+
+The installed app, the portable exe and a run from source all read and write that one
+folder, so it does not matter which you open. (Paste `%APPDATA%\video-notes\Notes` into
+Explorer's address bar to get there.)
 
 ```
 Notes/
@@ -61,17 +65,11 @@ Notes/
 ```
 
 Grouping a session into a folder on the home screen moves its folder on disk, and the other
-way round works too. The exact location depends on how the app is running:
+way round works too.
 
-| | |
-|---|---|
-| Installed | `Notes` beside the installed exe |
-| Portable | `Notes` beside the portable exe — carry both on a stick together |
-| From source | `Notes` in the project folder |
-| If none of those can be written to | `%APPDATA%\video-notes\Notes` |
-
-An installed build lands on that last row when it is installed under Program Files, which
-needs elevation to write to.
+This folder used to sit beside whichever exe you ran, which sounded tidier than it was:
+installing the app while also running the portable build gave each its own separate notes,
+and they drifted apart within the hour. One fixed location cannot do that.
 
 Three consequences worth knowing:
 

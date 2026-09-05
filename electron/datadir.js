@@ -2,9 +2,11 @@
 /*
  * Where the notes folder lives, and moving existing notes into it.
  *
- * "Beside the app" means different places depending on how the app is running, and
- * one of them is not writable, so the location is resolved rather than assumed and
- * the app is told which one it got.
+ * One folder, the same one for every build. This used to be resolved - beside a
+ * portable exe, beside an installed one, or the project when run from source - which
+ * meant each copy of the app quietly kept its own separate notes. Installing the app
+ * while also running the portable build produced three sets that drifted apart within
+ * the hour. A fixed location cannot do that.
  */
 
 const fs = require('fs');
@@ -13,45 +15,15 @@ const path = require('path');
 const { FolderStore } = require('./folderstore');
 const { Store } = require('./store');
 
-function writable(dir){
-  try {
-    fs.mkdirSync(dir, { recursive: true });
-    const probe = path.join(dir, '.write-probe');
-    fs.writeFileSync(probe, 'x');
-    fs.unlinkSync(probe);
-    return true;
-  } catch (e) { return false; }
-}
-
 /*
- * Candidates in order of preference. Returns { dir, kind, fellBack }.
- *   portable  - the folder the .exe was launched from
- *   dev       - the project folder
- *   installed - beside the executable, if that is writable
- *   appdata   - the fallback when none of the above can be written to
+ * Returns { dir, kind }. Still a folder tree you can open and read - browsable
+ * sessions, markdown summaries, PNG drawings - just always in the same place. The
+ * app shows the path on its home screen and opens it on click, so it stays findable.
  */
-function resolveDataDir(app, appRoot){
-  const tried = [];
-  const candidates = [];
-
-  if (process.env.PORTABLE_EXECUTABLE_DIR){
-    candidates.push({ dir: path.join(process.env.PORTABLE_EXECUTABLE_DIR, 'Notes'), kind: 'portable' });
-  }
-  if (!app.isPackaged){
-    candidates.push({ dir: path.join(appRoot, 'Notes'), kind: 'dev' });
-  } else {
-    candidates.push({ dir: path.join(path.dirname(process.execPath), 'Notes'), kind: 'installed' });
-  }
-
-  for (const c of candidates){
-    if (writable(c.dir)) return { dir: c.dir, kind: c.kind, fellBack: false, tried: tried };
-    tried.push(c.dir);
-  }
-
-  /* Program Files is not writable without elevation, so an installed build lands here. */
-  const fallback = path.join(app.getPath('userData'), 'Notes');
-  fs.mkdirSync(fallback, { recursive: true });
-  return { dir: fallback, kind: 'appdata', fellBack: true, tried: tried };
+function resolveDataDir(app){
+  const dir = path.join(app.getPath('userData'), 'Notes');
+  fs.mkdirSync(dir, { recursive: true });
+  return { dir: dir, kind: 'appdata' };
 }
 
 /*
@@ -110,4 +82,4 @@ function migrateIfNeeded(oldStoreDir, folderStore, log){
   };
 }
 
-module.exports = { resolveDataDir, migrateIfNeeded, writable };
+module.exports = { resolveDataDir, migrateIfNeeded };

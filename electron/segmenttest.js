@@ -16,7 +16,6 @@ const { app, BrowserWindow } = require('electron');
 
 const SANDBOX = fs.mkdtempSync(path.join(os.tmpdir(), 'vn-segmenttest-'));
 app.setPath('userData', SANDBOX);
-process.env.PORTABLE_EXECUTABLE_DIR = SANDBOX;
 
 require('./main.js');
 

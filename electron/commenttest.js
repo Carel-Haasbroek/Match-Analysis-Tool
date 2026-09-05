@@ -20,7 +20,6 @@ const { app, BrowserWindow } = require('electron');
 
 const SANDBOX = fs.mkdtempSync(path.join(os.tmpdir(), 'vn-commenttest-'));
 app.setPath('userData', SANDBOX);
-process.env.PORTABLE_EXECUTABLE_DIR = SANDBOX;
 
 /* a real, playable video, copied so the allowlist has something to stat */
 const VIDEO = path.join(SANDBOX, 'tiny.mp4');

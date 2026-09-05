@@ -13,7 +13,7 @@ const ROOT = path.join(__dirname, '..');
 
 let win = null;
 let store = null;
-let dataDir = null;          /* { dir, kind, fellBack } */
+let dataDir = null;          /* { dir, kind } */
 let migration = null;        /* what happened on first run, reported to the window */
 let http = null;
 let port = 0;
@@ -50,7 +50,7 @@ ipcMain.handle('store:keys', () => store.keys());
 
 /* where the notes actually are, and what the first run did with them */
 ipcMain.handle('app:dataDir', () => ({
-  dir: dataDir.dir, kind: dataDir.kind, fellBack: dataDir.fellBack, migration: migration
+  dir: dataDir.dir, kind: dataDir.kind, migration: migration
 }));
 ipcMain.handle('app:reveal', (e, target) => {
   shell.openPath(target || dataDir.dir);
@@ -95,7 +95,7 @@ function describe(filePath){
 }
 
 app.whenReady().then(async () => {
-  dataDir = resolveDataDir(app, ROOT);
+  dataDir = resolveDataDir(app);
   store = new FolderStore(dataDir.dir);
 
   /* One-time move out of the old base64-blob store. It writes a backup first and
