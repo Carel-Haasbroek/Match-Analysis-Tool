@@ -598,6 +598,7 @@
       renderMarks();
       touchLibrary();
       refreshName();
+      refreshTrashButton();      /* this session may have things waiting in the trash */
       var e = entryFor(videoKey);
       if (e && pendingClipName && !e.customName){
         e.customName = pendingClipName;
@@ -2200,7 +2201,115 @@
     if (lightboxNote && lightboxNote.id === id) closeLightbox();
   }
 
-  /* A deleted note is kept aside rather than destroyed, so a mis-click is never final. */
+  /* ---------- recently deleted ---------- */
+  /* A deleted note is kept aside rather than destroyed, so a mis-click is never final -
+     which was only half true until this could read it back. */
+  var trashModal = $('trash-modal');
+
+  function trashKey(){ return videoKey ? siblingKey(videoKey, 'vnotes:trash:') : null; }
+
+  function readTrash(){
+    var k = trashKey();
+    if (!k) return Promise.resolve([]);
+    return store.get(k).then(function(v){ return Array.isArray(v) ? v : []; });
+  }
+
+  /* the line only appears when there is something to put back */
+  function refreshTrashButton(){
+    var btn = $('trash-btn');
+    readTrash().then(function(list){
+      btn.classList.toggle('hidden', !list.length);
+      btn.textContent = 'Recently deleted (' + list.length + ')';
+    });
+  }
+
+  function openTrash(){
+    trashModal.classList.add('open');
+    renderTrash();
+  }
+  function closeTrash(){ trashModal.classList.remove('open'); }
+
+  function renderTrash(){
+    var host = $('trash-list');
+    host.innerHTML = '';
+    readTrash().then(function(list){
+      if (!list.length){
+        var none = document.createElement('div');
+        none.className = 'recent-empty';
+        none.textContent = 'Nothing deleted from this session.';
+        host.appendChild(none);
+        return;
+      }
+      list.forEach(function(row, i){
+        var n = row && row.note;
+        if (!n) return;
+        var el = document.createElement('div');
+        el.className = 'trash-row';
+
+        if (n.image){
+          var img = document.createElement('img');
+          img.className = 'trash-thumb';
+          img.src = n.image;
+          img.alt = '';
+          el.appendChild(img);
+        }
+
+        var main = document.createElement('div');
+        main.className = 'trash-main';
+        var t = document.createElement('div');
+        t.className = 'trash-time mono';
+        t.textContent = fmt(n.time);
+        var lines = noteLines(n);
+        var tx = document.createElement('div');
+        tx.className = 'trash-text' + (lines.length ? '' : ' muted');
+        tx.textContent = lines.length ? lines.join('  ·  ') : 'Drawing only';
+        var when = document.createElement('div');
+        when.className = 'trash-when';
+        when.textContent = row.deleted ? 'deleted ' + relTime(row.deleted) : '';
+        main.appendChild(t); main.appendChild(tx); main.appendChild(when);
+        el.appendChild(main);
+
+        var back = document.createElement('button');
+        back.type = 'button';
+        back.textContent = 'Restore';
+        back.addEventListener('click', function(){ restoreNote(i); });
+        el.appendChild(back);
+
+        host.appendChild(el);
+      });
+    });
+  }
+
+  /* Back into the notes, and off the trash list. The store drops its tombstone when it
+     sees the id again, which is what makes the restore survive a reload. */
+  function restoreNote(index){
+    var k = trashKey();
+    if (!k) return;
+    readTrash().then(function(list){
+      var row = list[index];
+      if (!row || !row.note) return;
+      var already = notes.some(function(n){ return n.id === row.note.id; });
+      if (!already){
+        notes.push(row.note);
+        notes.sort(function(a, b){ return a.time - b.time; });
+      }
+      list.splice(index, 1);
+      return Promise.resolve(store.set(k, list)).then(function(){
+        persist();
+        renderNotes();
+        renderMarks();
+        renderTrash();
+        refreshTrashButton();
+        setNotice(already ? 'That note was already back.'
+                          : 'Restored the note at ' + fmt(row.note.time) + '.');
+      });
+    });
+  }
+
+  $('trash-btn').addEventListener('click', openTrash);
+  $('trash-close').addEventListener('click', closeTrash);
+  wireModal(trashModal, closeTrash);
+
   var TRASH_MAX = 50;
   function trash(note){
     if (!videoKey) return;
@@ -2209,8 +2318,8 @@
       var list = Array.isArray(old) ? old : [];
       list.unshift({ deleted: Date.now(), note: note });
       if (list.length > TRASH_MAX) list.length = TRASH_MAX;
-      store.set(key, list);
-    });
+      return store.set(key, list);
+    }).then(refreshTrashButton);
   }
 
   /* ---------- export / import ---------- */

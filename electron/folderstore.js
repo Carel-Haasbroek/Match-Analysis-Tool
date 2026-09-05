@@ -534,16 +534,25 @@ class FolderStore {
       notes: mine
     }, null, 2));
 
-    /* What was here a moment ago and is not now was deleted. Recording the ids is the
-       only way a deletion reaches the coach whose file the note lives in. */
+    /*
+     * What was here a moment ago and is not now was deleted. Recording the ids is the
+     * only way a deletion reaches the coach whose file the note lives in.
+     *
+     * And the other way: an id that is back must come off the list, or restoring a note
+     * from the trash would put it on screen and then lose it again on the next read,
+     * which filters tombstoned ids out. The two halves have to move together.
+     */
     const now = new Set(notes.map((n) => n.id));
     const removed = before.filter((n) => !now.has(n.id)).map((n) => n.id);
-    if (removed.length){
-      const file = path.join(dir, this._mine('deleted'));
-      const had = parseJson(readIfPresent(file));
-      const all = new Set(Array.isArray(had) ? had : []);
-      for (const id of removed) all.add(id);
-      writeAtomic(file, JSON.stringify(Array.from(all), null, 2));
+    const file = path.join(dir, this._mine('deleted'));
+    const had = parseJson(readIfPresent(file));
+    const all = new Set(Array.isArray(had) ? had : []);
+    const was = all.size;
+    for (const id of removed) all.add(id);
+    for (const id of now) all.delete(id);
+    if (all.size !== was || removed.length){
+      if (all.size) writeAtomic(file, JSON.stringify(Array.from(all), null, 2));
+      else { try { fs.unlinkSync(file); } catch (e) {} }
     }
 
     /* drop drawings whose note has gone, so deleting a note reclaims its file */
