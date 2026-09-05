@@ -1,6 +1,6 @@
 {
   "name": "video-notes",
-  "version": "1.0.2",
+  "version": "1.0.3",
   "private": true,
   "description": "Match analysis tool - timestamped drawings and notes over local video and YouTube",
   "main": "electron/main.js",
