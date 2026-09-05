@@ -439,9 +439,28 @@ class FolderStore {
     return out;
   }
 
+  /*
+   * Deleting a session removes this coach's files from it and nothing else. In a shared
+   * vault the folder holds other people's notes too, and one person tidying up must not
+   * take the squad's work with it. The folder itself goes only when no notes of any kind
+   * are left - which, in a vault nobody shares, is always.
+   */
   delete(key){
     const dir = this._existingDir(key);
     if (!dir) return false;
+
+    for (const name of listDir(dir)){
+      const mine = name === this._mine('notes') || name === this._mine('deleted') ||
+                   name === this._mine('trash') || name === this._mine('summary', '.md') ||
+                   name === this._mine('summary', '.meta.json');
+      if (!mine) continue;
+      try { fs.unlinkSync(path.join(dir, name)); } catch (e) {}
+    }
+
+    const left = listDir(dir);
+    const someoneElse = left.some((n) => n === 'session.json' || NOTES_FILE.test(n));
+    if (someoneElse) return true;                 /* their notes stay, and so does the folder */
+
     try { fs.rmSync(dir, { recursive: true, force: true }); } catch (e) { return false; }
     delete this.paths[key];
     this._savePaths();
@@ -455,8 +474,21 @@ class FolderStore {
     return raw ? raw.toString('utf8') : null;
   }
 
+  /*
+   * A key this store has never seen may be a session another coach has just created in a
+   * shared vault: the library lists it, because that is read from their file directly,
+   * but nothing here knows which folder it is in. Scan once before giving up, or the
+   * session would show in the list and read back empty until the app was restarted.
+   *
+   * Only a genuinely unknown key gets here - a summary or trash key resolves through
+   * its session's folder like any other - so the scan is rare rather than per-read.
+   */
   _existingDir(key){
-    const rel = this.paths[key];
+    let rel = this.paths[key];
+    if (!rel){
+      this.rescan();
+      rel = this.paths[key];
+    }
     if (!rel) return null;
     const dir = path.join(this.root, rel);
     return fs.existsSync(dir) ? dir : null;
@@ -534,16 +566,25 @@ class FolderStore {
       notes: mine
     }, null, 2));
 
-    /* What was here a moment ago and is not now was deleted. Recording the ids is the
-       only way a deletion reaches the coach whose file the note lives in. */
+    /*
+     * What was here a moment ago and is not now was deleted. Recording the ids is the
+     * only way a deletion reaches the coach whose file the note lives in.
+     *
+     * And the other way: an id that is back must come off the list, or restoring a note
+     * from the trash would put it on screen and then lose it again on the next read,
+     * which filters tombstoned ids out. The two halves have to move together.
+     */
     const now = new Set(notes.map((n) => n.id));
     const removed = before.filter((n) => !now.has(n.id)).map((n) => n.id);
-    if (removed.length){
-      const file = path.join(dir, this._mine('deleted'));
-      const had = parseJson(readIfPresent(file));
-      const all = new Set(Array.isArray(had) ? had : []);
-      for (const id of removed) all.add(id);
-      writeAtomic(file, JSON.stringify(Array.from(all), null, 2));
+    const file = path.join(dir, this._mine('deleted'));
+    const had = parseJson(readIfPresent(file));
+    const all = new Set(Array.isArray(had) ? had : []);
+    const was = all.size;
+    for (const id of removed) all.add(id);
+    for (const id of now) all.delete(id);
+    if (all.size !== was || removed.length){
+      if (all.size) writeAtomic(file, JSON.stringify(Array.from(all), null, 2));
+      else { try { fs.unlinkSync(file); } catch (e) {} }
     }
 
     /* drop drawings whose note has gone, so deleting a note reclaims its file */

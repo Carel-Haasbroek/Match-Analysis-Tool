@@ -167,6 +167,38 @@ function main(){
      lib.length === 2 && lib.some((e) => e.key === 'vnotes:only-his.mp4_7'),
      JSON.stringify(lib.map((e) => e.key)));
 
+  /* ---------- deleting a session ---------- */
+  console.log('\ndeleting a whole session');
+  const shared = fs.mkdtempSync(path.join(os.tmpdir(), 'vn-synctest-del-'));
+  const a1 = new FolderStore(shared, 'carel-7f3a');
+  const b1 = new FolderStore(shared, 'marius-2b91');
+  a1.set('vnotes:index', JSON.stringify([{ key: 'vnotes:shared.mp4_4', customName: 'Shared' }]));
+  a1.set('vnotes:shared.mp4_4', JSON.stringify([{ id: 'a1', time: 1, text: 'mine' }]));
+  b1.set('vnotes:shared.mp4_4', JSON.stringify(
+    JSON.parse(b1.get('vnotes:shared.mp4_4')).concat([{ id: 'b1', time: 2, text: 'theirs' }])));
+
+  const sharedDir = path.join(shared, 'Shared');
+  eq('both coaches have notes in the session before deleting',
+     JSON.parse(a1.get('vnotes:shared.mp4_4')).length, 2);
+
+  a1.delete('vnotes:shared.mp4_4');
+  ok('the deleting coach\'s own file is gone',
+     !fs.existsSync(path.join(sharedDir, 'notes.carel-7f3a.json')),
+     fs.readdirSync(sharedDir).join(', '));
+  ok('the other coach\'s file is untouched',
+     fs.existsSync(path.join(sharedDir, 'notes.marius-2b91.json')),
+     fs.readdirSync(sharedDir).join(', '));
+  ok('and the folder stays, because their work is still in it',
+     fs.existsSync(sharedDir));
+  eq('what is left is only their note',
+     JSON.parse(b1.get('vnotes:shared.mp4_4')).length, 1);
+
+  /* the last coach out takes the folder with them */
+  b1.delete('vnotes:shared.mp4_4');
+  ok('once nobody has notes in it, the folder goes', !fs.existsSync(sharedDir), sharedDir);
+
+  fs.rmSync(shared, { recursive: true, force: true });
+
   /* ---------- a session another coach created, found by scanning ---------- */
   const fresh = fs.mkdtempSync(path.join(os.tmpdir(), 'vn-synctest-scan-'));
   fs.mkdirSync(path.join(fresh, 'Theirs'), { recursive: true });

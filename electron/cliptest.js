@@ -28,6 +28,22 @@ const VIDEO = 'https://www.youtube.com/watch?v=aqz-KE-bpKQ';
 const IN = 120, OUT = 240;
 
 function run(win, code){ return win.webContents.executeJavaScript(code); }
+
+/* Resolves once the video has a real duration, or gives up loudly. */
+async function ready(win, ms){
+  const until = Date.now() + (ms || 30000);
+  while (Date.now() < until){
+    const d = await run(win, `(function(){
+      /* "1:23 / 10:34" - the half after the slash is the duration */
+      var t = document.getElementById('time-display').textContent || '';
+      var parts = (t.split('/')[1] || '').trim().split(':');
+      return parts.length === 2 ? (+parts[0]) * 60 + (+parts[1]) : 0;
+    })()`);
+    if (d > 0) return d;
+    await wait(400);
+  }
+  throw new Error('the video never reported a duration');
+}
 const wait = (ms) => new Promise((r) => setTimeout(r, ms));
 
 app.whenReady().then(() => {
@@ -48,7 +64,9 @@ app.whenReady().then(() => {
         document.getElementById('segment-form').dispatchEvent(
           new Event('submit', { bubbles: true, cancelable: true }));
       `);
-      await wait(9000);
+      /* Wait for the player, not for a stopwatch: a fixed pause fails whenever YouTube
+         is slower than the guess, and wastes the difference when it is faster. */
+      await ready(win);
 
       const full = await run(win, `({
         loaded: document.getElementById('file-name').textContent.length > 0,

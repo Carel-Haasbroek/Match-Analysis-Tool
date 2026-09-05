@@ -193,6 +193,7 @@
 
       <div class="pane" id="pane-notes">
         <div class="notes-list" id="notes-list"></div>
+        <button type="button" class="link-btn hidden" id="trash-btn"></button>
       </div>
 
       <div class="pane hidden" id="pane-summary">
@@ -365,6 +366,20 @@
   </div>
 </div>
 
+<div class="lightbox" id="trash-modal">
+  <div class="segment-panel">
+    <h2>Recently deleted</h2>
+    <p class="name-hint">Notes you have deleted from this session, newest first. Putting one
+      back returns it to the moment it was made against, with its drawing and every comment
+      on it.</p>
+    <div class="trash-list" id="trash-list"></div>
+    <div class="seg-actions">
+      <span class="grow"></span>
+      <button type="button" id="trash-close">Close</button>
+    </div>
+  </div>
+</div>
+
 <div class="lightbox" id="help-modal">
   <div class="help-panel">
     <header class="help-head">
@@ -379,6 +394,7 @@
         file from this machine. Tick <em>Only part of this video</em> and give a start and
         an end to work on one passage &mdash; marks are then timed from the start of that
         segment, so 0:00 is where it begins.</p>
+      <p>You can also drag a video file straight onto the player.</p>
       <p>A session is one video and everything you have written about it. Opening the same
         video again always reopens the same session: local files are recognised by their
         name and size, so it does not matter where the file sits on disk.</p>
