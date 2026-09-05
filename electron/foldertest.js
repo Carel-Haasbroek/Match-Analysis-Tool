@@ -128,7 +128,9 @@ app.whenReady().then(() => {
       check('the ungrouped session stayed at the top level',
             dirs.indexOf('Training drill') >= 0, dirs.join(' | '));
       check('its notes moved with it',
-            fs.existsSync(path.join(NOTES, 'Competition 2026', 'Jack round 1', 'session.json')));
+            fs.readdirSync(path.join(NOTES, 'Competition 2026', 'Jack round 1'))
+              .some(function(n){ return /^notes\..+\.json$/.test(n); }),
+            fs.readdirSync(path.join(NOTES, 'Competition 2026', 'Jack round 1')).join(', '));
 
       /* and it all survives a restart */
       await run(win, `location.reload()`);

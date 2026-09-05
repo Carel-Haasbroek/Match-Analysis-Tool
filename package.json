@@ -6,7 +6,7 @@
   "main": "electron/main.js",
   "scripts": {
     "start": "electron .",
-    "test": "node electron/selftest.js && node electron/storetest.js",
+    "test": "node electron/selftest.js && node electron/storetest.js && node electron/synctest.js",
     "dist": "electron-builder && node build/sort-dist.js",
     "icon": "node build/make-icon.js"
   },

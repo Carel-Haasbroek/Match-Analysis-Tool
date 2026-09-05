@@ -8,16 +8,24 @@
  * session.json, its summary as markdown, and its drawings as real PNG files.
  *
  *   <root>/
- *     paths.json                  key -> folder, so nothing is ever guessed
- *     library.json                the session index
- *     prefs.json
+ *     paths.json                  key -> folder: a cache, rebuilt by scanning
+ *     library.<author>.json       the session index, one per coach
  *     Competition 2026/           a group folder, mirroring the app's folders
  *       Jack_1/
- *         session.json            notes, with drawings referenced by filename
- *         summary.md
- *         trash.json              deleted notes, kept
+ *         notes.carel-7f3a.json   only this coach's app ever writes this file
+ *         notes.marius-2b91.json  another coach's, sitting alongside
+ *         deleted.carel-7f3a.json note ids this coach removed
+ *         summary.carel-7f3a.md
+ *         trash.carel-7f3a.json   deleted notes, kept
+ *         session.json            written before this, still read
  *         drawings/
- *           0-12.400.png
+ *           1788593316500-jt19c.png
+ *
+ * One file per coach is what makes a vault safe to share through Google Drive or
+ * Dropbox. Two machines never write the same file, so the sync tool has nothing to
+ * conflict over; everyone's files are unioned on read instead. A note or comment
+ * belongs to whoever's file it is in, recorded as `by` so the split survives a round
+ * trip through the renderer, which only ever sees one merged list.
  *
  * Writes go through a temp file and a rename, as before: an interrupted write can
  * never truncate a session.
@@ -33,6 +41,62 @@ const TRASH_PREFIX = 'vnotes:trash:';
 
 /* data:image/png;base64,.... */
 const DATA_URL = /^data:image\/(png|jpeg|jpg|webp);base64,([A-Za-z0-9+/=]+)$/;
+
+/* One coach's files. The patterns are loose on purpose: Drive and Dropbox fork a file
+   they cannot merge into "notes.carel (Carel's conflicted copy 2026-09-05).json", and a
+   fork that is never read is work that has quietly vanished. Adopting them costs
+   nothing - they merge by id like any other author's file. */
+const NOTES_FILE = /^notes\..+\.json$/i;
+const DELETED_FILE = /^deleted\..+\.json$/i;
+const LIBRARY_FILE = /^library\..+\.json$/i;
+const SUMMARY_FILE = /^summary\..+\.md$/i;
+const TRASH_FILE = /^trash\..+\.json$/i;
+
+function listDir(dir){
+  try { return fs.readdirSync(dir); } catch (e) { return []; }
+}
+
+function parseJson(buf){
+  if (!buf) return null;
+  try { return JSON.parse(buf.toString('utf8')); } catch (e) { return null; }
+}
+
+/*
+ * Union several coaches' note lists. Matches on note id and merges comment threads by
+ * comment id, which is the same rule the renderer's own mergeNoteLists applies to an
+ * imported file - the two are deliberate mirrors of each other, kept apart only
+ * because app.js is a plain browser script with no require.
+ *
+ * A file may hold a stub: { id, time, comments } for a note someone else created that
+ * this coach commented on. Whichever copy is seen first, the full note fills in the
+ * fields the stub does not carry.
+ */
+function unionNotes(lists){
+  const byId = new Map();
+  for (const list of lists){
+    if (!Array.isArray(list)) continue;
+    for (const n of list){
+      if (!n || typeof n.id === 'undefined') continue;
+      const have = byId.get(n.id);
+      if (!have){ byId.set(n.id, Object.assign({}, n)); continue; }
+
+      const seen = new Set((have.comments || []).map((c) => c && c.id));
+      const merged = (have.comments || []).slice();
+      for (const c of (n.comments || [])){
+        if (c && !seen.has(c.id)){ merged.push(c); seen.add(c.id); }
+      }
+      if (merged.length) have.comments = merged;
+
+      for (const k of Object.keys(n)){
+        if (k === 'comments') continue;
+        if (have[k] === undefined) have[k] = n[k];
+      }
+    }
+  }
+  const out = Array.from(byId.values());
+  out.sort((a, b) => (a.time || 0) - (b.time || 0));
+  return out;
+}
 
 function safeSegment(s){
   /* Windows forbids these outright; control codes are dropped rather than turned
@@ -65,12 +129,66 @@ function readIfPresent(file){
 }
 
 class FolderStore {
-  constructor(root){
+  constructor(root, author){
     this.root = root;
     fs.mkdirSync(this.root, { recursive: true });
     this.pathsFile = path.join(this.root, 'paths.json');
     this.paths = this._readPaths();
     this.others = this._readOthers();
+    /* Until the renderer says who is here, writes land in a neutral file rather than
+       being guessed at. It sends the name at boot, before anything can be saved. */
+    this.author = author || 'me';
+    this.rescan();
+  }
+
+  setAuthor(author){ if (author) this.author = safeSegment(author); }
+
+  _mine(kind, ext){ return kind + '.' + this.author + (ext || '.json'); }
+
+  /*
+   * paths.json is a cache, not the truth. A coach sharing a vault writes their own
+   * copy of it, so trusting it would hide sessions another coach created - the folders
+   * are there, but this machine's index has never heard of them. Reading the key out
+   * of the files themselves cannot go stale.
+   */
+  rescan(){
+    const found = {};
+    const walk = (dir, rel) => {
+      for (const name of listDir(dir)){
+        if (name === 'drawings' || name === 'other') continue;
+        const full = path.join(dir, name);
+        let st;
+        try { st = fs.statSync(full); } catch (e) { continue; }
+        if (!st.isDirectory()) continue;
+        const childRel = rel ? rel + path.sep + name : name;
+        const key = this._keyInFolder(full);
+        if (key) found[key] = childRel;
+        walk(full, childRel);
+      }
+    };
+    walk(this.root, '');
+
+    let changed = false;
+    for (const key of Object.keys(found)){
+      if (this.paths[key] !== found[key]){ this.paths[key] = found[key]; changed = true; }
+    }
+    /* a folder that has gone stops being claimed, but nothing on disk is touched */
+    for (const key of Object.keys(this.paths)){
+      if (!fs.existsSync(path.join(this.root, this.paths[key]))){
+        delete this.paths[key]; changed = true;
+      }
+    }
+    if (changed){ try { this._savePaths(); } catch (e) {} }
+  }
+
+  _keyInFolder(dir){
+    const names = listDir(dir);
+    for (const n of names){
+      if (n !== 'session.json' && !NOTES_FILE.test(n)) continue;
+      const doc = parseJson(readIfPresent(path.join(dir, n)));
+      if (doc && doc.key) return doc.key;
+    }
+    return null;
   }
 
   _readOthers(){
@@ -142,24 +260,27 @@ class FolderStore {
   /* ---------- the key/value face the renderer sees ---------- */
 
   get(key){
-    if (key === INDEX_KEY) return this._readJsonFile('library.json');
+    if (key === INDEX_KEY) return this._readLibrary();
     if (key === PREFS_KEY) return this._readJsonFile('prefs.json');
 
     if (key.startsWith(SUMMARY_PREFIX)){
       const dir = this._existingDir(key.slice(SUMMARY_PREFIX.length));
       if (!dir) return null;
-      const md = readIfPresent(path.join(dir, 'summary.md'));
-      const meta = readIfPresent(path.join(dir, 'summary.meta.json'));
-      if (!md) return null;
-      const updated = meta ? (JSON.parse(meta.toString('utf8')).updated || 0) : 0;
-      return JSON.stringify({ text: md.toString('utf8'), updated: updated });
+      return this._readSummary(dir);
     }
 
     if (key.startsWith(TRASH_PREFIX)){
       const dir = this._existingDir(key.slice(TRASH_PREFIX.length));
       if (!dir) return null;
-      const raw = readIfPresent(path.join(dir, 'trash.json'));
-      return raw ? raw.toString('utf8') : null;
+      const all = [];
+      for (const name of listDir(dir)){
+        if (name !== 'trash.json' && !TRASH_FILE.test(name)) continue;
+        const list = parseJson(readIfPresent(path.join(dir, name)));
+        if (Array.isArray(list)) for (const item of list) all.push(item);
+      }
+      if (!all.length) return null;
+      all.sort((a, b) => (b.deleted || 0) - (a.deleted || 0));
+      return JSON.stringify(all);
     }
 
     /* a session's notes, or a plain value stored under an unrecognised key */
@@ -168,29 +289,112 @@ class FolderStore {
       const other = readIfPresent(this._otherFile(key));
       return other ? other.toString('utf8') : null;
     }
-    const raw = readIfPresent(path.join(dir, 'session.json'));
-    if (!raw) return null;
-    let doc;
-    try { doc = JSON.parse(raw.toString('utf8')); } catch (e) { return null; }
-    return JSON.stringify(this._inlineImages(dir, doc.notes || []));
+    const notes = this._readNotes(dir);
+    if (!notes) return null;
+    return JSON.stringify(this._inlineImages(dir, notes));
+  }
+
+  /* Every coach's file in this session, unioned, with anyone's deletions honoured. */
+  _readNotes(dir){
+    const lists = [];
+    let any = false;
+
+    const legacy = parseJson(readIfPresent(path.join(dir, 'session.json')));
+    if (legacy){ lists.push(legacy.notes || []); any = true; }
+
+    for (const name of listDir(dir)){
+      if (!NOTES_FILE.test(name)) continue;
+      const doc = parseJson(readIfPresent(path.join(dir, name)));
+      if (!doc) continue;
+      lists.push(Array.isArray(doc) ? doc : (doc.notes || []));
+      any = true;
+    }
+    if (!any) return null;
+
+    const merged = unionNotes(lists);
+    const gone = this._tombstones(dir);
+    return gone.size ? merged.filter((n) => !gone.has(n.id)) : merged;
+  }
+
+  /* A deletion has to travel too, or a note another coach removed would come back from
+     their file on the next read. The note itself stays in their trash. */
+  _tombstones(dir){
+    const out = new Set();
+    for (const name of listDir(dir)){
+      if (!DELETED_FILE.test(name)) continue;
+      const ids = parseJson(readIfPresent(path.join(dir, name)));
+      if (Array.isArray(ids)) for (const id of ids) out.add(id);
+    }
+    return out;
+  }
+
+  /*
+   * A summary is one free-text field, so it cannot be unioned the way notes can. Yours
+   * wins when you have one; otherwise you see whoever wrote most recently, and if you
+   * edit it, it becomes yours as well. Nobody's file is ever written by anyone else.
+   */
+  _readSummary(dir){
+    let best = null;
+    const mine = path.join(dir, this._mine('summary', '.md'));
+
+    for (const name of listDir(dir)){
+      const isMine = name === path.basename(mine);
+      if (name !== 'summary.md' && !SUMMARY_FILE.test(name)) continue;
+      const md = readIfPresent(path.join(dir, name));
+      if (!md) continue;
+      const metaName = name.replace(/\.md$/i, '.meta.json');
+      const meta = parseJson(readIfPresent(path.join(dir, metaName)));
+      const rec = { text: md.toString('utf8'), updated: (meta && meta.updated) || 0 };
+      if (isMine) return JSON.stringify(rec);
+      if (!best || rec.updated > best.updated) best = rec;
+    }
+    return best ? JSON.stringify(best) : null;
+  }
+
+  /* Each coach keeps their own index; they are merged by key, newest opening winning. */
+  _readLibrary(){
+    const lists = [];
+    const legacy = parseJson(readIfPresent(path.join(this.root, 'library.json')));
+    if (Array.isArray(legacy)) lists.push(legacy);
+    for (const name of listDir(this.root)){
+      if (!LIBRARY_FILE.test(name)) continue;
+      const doc = parseJson(readIfPresent(path.join(this.root, name)));
+      if (Array.isArray(doc)) lists.push(doc);
+    }
+    if (!lists.length) return null;
+
+    const byKey = new Map();
+    for (const list of lists){
+      for (const e of list){
+        if (!e || !e.key) continue;
+        const have = byKey.get(e.key);
+        if (!have || (e.lastOpened || 0) > (have.lastOpened || 0)) byKey.set(e.key, e);
+      }
+    }
+    const out = Array.from(byKey.values());
+    out.sort((a, b) => (b.lastOpened || 0) - (a.lastOpened || 0));
+    return JSON.stringify(out);
   }
 
   set(key, value){
-    if (key === INDEX_KEY){ writeAtomic(path.join(this.root, 'library.json'), value); return true; }
+    if (key === INDEX_KEY){
+      writeAtomic(path.join(this.root, this._mine('library')), value);
+      return true;
+    }
     if (key === PREFS_KEY){ writeAtomic(path.join(this.root, 'prefs.json'), value); return true; }
 
     if (key.startsWith(SUMMARY_PREFIX)){
       const rec = JSON.parse(value);
       const dir = this.sessionDir(key.slice(SUMMARY_PREFIX.length), this._hintFor(key.slice(SUMMARY_PREFIX.length)));
-      writeAtomic(path.join(dir, 'summary.md'), rec.text || '');
-      writeAtomic(path.join(dir, 'summary.meta.json'),
+      writeAtomic(path.join(dir, this._mine('summary', '.md')), rec.text || '');
+      writeAtomic(path.join(dir, this._mine('summary', '.meta.json')),
         JSON.stringify({ updated: rec.updated || Date.now() }, null, 2));
       return true;
     }
 
     if (key.startsWith(TRASH_PREFIX)){
       const dir = this.sessionDir(key.slice(TRASH_PREFIX.length), this._hintFor(key.slice(TRASH_PREFIX.length)));
-      writeAtomic(path.join(dir, 'trash.json'), value);
+      writeAtomic(path.join(dir, this._mine('trash')), value);
       return true;
     }
 
@@ -217,15 +421,20 @@ class FolderStore {
   }
 
   keys(){
+    /* a shared vault can have grown since this store was opened */
+    this.rescan();
+
     const out = [];
-    if (fs.existsSync(path.join(this.root, 'library.json'))) out.push(INDEX_KEY);
-    if (fs.existsSync(path.join(this.root, 'prefs.json'))) out.push(PREFS_KEY);
+    const rootNames = listDir(this.root);
+    if (rootNames.some((n) => n === 'library.json' || LIBRARY_FILE.test(n))) out.push(INDEX_KEY);
+    if (rootNames.indexOf('prefs.json') >= 0) out.push(PREFS_KEY);
     for (const k of Object.keys(this.others)) out.push(k);
+
     for (const key of Object.keys(this.paths)){
-      const dir = path.join(this.root, this.paths[key]);
-      if (fs.existsSync(path.join(dir, 'session.json'))) out.push(key);
-      if (fs.existsSync(path.join(dir, 'summary.md'))) out.push(SUMMARY_PREFIX + key);
-      if (fs.existsSync(path.join(dir, 'trash.json'))) out.push(TRASH_PREFIX + key);
+      const names = listDir(path.join(this.root, this.paths[key]));
+      if (names.some((n) => n === 'session.json' || NOTES_FILE.test(n))) out.push(key);
+      if (names.some((n) => n === 'summary.md' || SUMMARY_FILE.test(n))) out.push(SUMMARY_PREFIX + key);
+      if (names.some((n) => n === 'trash.json' || TRASH_FILE.test(n))) out.push(TRASH_PREFIX + key);
     }
     return out;
   }
@@ -255,7 +464,7 @@ class FolderStore {
 
   /* A readable folder name, taken from the library entry when there is one. */
   _hintFor(key){
-    const raw = this._readJsonFile('library.json');
+    const raw = this._readLibrary();
     if (!raw) return null;
     try {
       const lib = JSON.parse(raw);
@@ -265,24 +474,33 @@ class FolderStore {
     } catch (err) { return null; }
   }
 
-  /* Drawings become real files. Base64 inside json is a third larger than the bytes
-     it carries and cannot be opened by anything else. */
+  /*
+   * Drawings become real files. Base64 inside json is a third larger than the bytes it
+   * carries and cannot be opened by anything else.
+   *
+   * They are named for the note rather than its position, because two coaches adding a
+   * note would otherwise both write 000_*.png - and because inserting a note used to
+   * rename every file after it. The drawings folder is shared, so the keep-set is built
+   * from everyone's notes: reclaiming space must never take another coach's picture.
+   */
   _writeSession(dir, key, notes){
     const drawings = path.join(dir, 'drawings');
     fs.mkdirSync(drawings, { recursive: true });
 
+    const before = this._readNotes(dir) || [];
     const keep = new Set();
+
     const slim = notes.map((n, i) => {
       const out = Object.assign({}, n);
       ['image', 'overlayImage'].forEach((field) => {
         const val = n[field];
+        if (val && typeof val === 'object' && val.file){ keep.add(val.file); return; }
         if (typeof val !== 'string') return;
         const m = DATA_URL.exec(val);
         if (!m) return;
         const ext = m[1] === 'jpeg' ? 'jpg' : m[1];
-        const stamp = (typeof n.time === 'number' ? n.time.toFixed(3) : String(i)).replace('.', '-');
-        const name = String(i).padStart(3, '0') + '_' + stamp +
-                     (field === 'overlayImage' ? '_overlay' : '') + '.' + ext;
+        const base = safeSegment(String(n.id || i)) || String(i);
+        const name = base + (field === 'overlayImage' ? '_overlay' : '') + '.' + ext;
         writeAtomic(path.join(drawings, name), Buffer.from(m[2], 'base64'));
         keep.add(name);
         out[field] = { file: name };            /* referenced, not embedded */
@@ -290,11 +508,43 @@ class FolderStore {
       return out;
     });
 
-    writeAtomic(path.join(dir, 'session.json'), JSON.stringify({
+    /* Keep only what is this coach's: their own notes whole, and for a note somebody
+       else created, a stub carrying nothing but their comments. Ownership is recorded
+       rather than inferred, so it survives the round trip through the renderer - which
+       only ever sees one merged list and cannot tell the files apart. */
+    const me = this.author;
+    const mine = [];
+    for (const n of slim){
+      const comments = (n.comments || []).filter((c) => {
+        if (c && !c.by) c.by = me;              /* new: claim it */
+        return c && c.by === me;
+      });
+      if (!n.by) n.by = me;                     /* a note nobody has claimed is new */
+      if (n.by === me){
+        mine.push(Object.assign({}, n, comments.length ? { comments: comments } : {}));
+      } else if (comments.length){
+        mine.push({ id: n.id, time: n.time, by: me, stub: true, comments: comments });
+      }
+    }
+
+    writeAtomic(path.join(dir, this._mine('notes')), JSON.stringify({
       key: key,
+      author: me,
       saved: new Date().toISOString(),
-      notes: slim
+      notes: mine
     }, null, 2));
+
+    /* What was here a moment ago and is not now was deleted. Recording the ids is the
+       only way a deletion reaches the coach whose file the note lives in. */
+    const now = new Set(notes.map((n) => n.id));
+    const removed = before.filter((n) => !now.has(n.id)).map((n) => n.id);
+    if (removed.length){
+      const file = path.join(dir, this._mine('deleted'));
+      const had = parseJson(readIfPresent(file));
+      const all = new Set(Array.isArray(had) ? had : []);
+      for (const id of removed) all.add(id);
+      writeAtomic(file, JSON.stringify(Array.from(all), null, 2));
+    }
 
     /* drop drawings whose note has gone, so deleting a note reclaims its file */
     for (const f of fs.readdirSync(drawings)){

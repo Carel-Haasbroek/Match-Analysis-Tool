@@ -50,6 +50,9 @@ function createWindow(){
 ipcMain.handle('store:get', (e, key) => store.get(key));
 ipcMain.handle('store:set', (e, key, value) => store.set(key, value));
 ipcMain.handle('store:keys', () => store.keys());
+/* Who is writing. Every note and comment this app saves goes in that coach's own file,
+   which is what lets a vault be shared without two machines touching one file. */
+ipcMain.handle('store:author', (e, author) => { store.setAuthor(author); return true; });
 
 /* where the notes actually are, and what the first run did with them */
 ipcMain.handle('app:dataDir', () => ({
@@ -154,7 +157,7 @@ app.whenReady().then(async () => {
   /* The folder notes lived in before vaults existed becomes the first vault, in place. */
   dataDir = resolveDataDir(app);
   vaults = new Vaults(app.getPath('userData'), dataDir.dir);
-  store = new VaultStore(vaults);
+  store = new VaultStore(vaults, path.join(app.getPath('userData'), 'prefs.json'));
 
   /* One-time move out of the old base64-blob store, into the first vault. It writes a
      backup first and never deletes the old copy: this is work that cannot be recreated. */

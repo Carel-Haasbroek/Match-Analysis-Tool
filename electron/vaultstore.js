@@ -16,6 +16,9 @@
  * there was only one folder. Nothing here knows how a session is stored.
  */
 
+const fs = require('fs');
+const path = require('path');
+
 const { FolderStore } = require('./folderstore');
 
 const INDEX_KEY = 'vnotes:index';
@@ -25,16 +28,29 @@ const VAULT_RE = /^vault:([^|]+)\|([\s\S]+)$/;
 function withVault(id, inner){ return 'vault:' + id + '|' + inner; }
 
 class VaultStore {
-  constructor(vaults){
+  /*
+   * prefsFile sits in userData rather than in a vault. Your name, theme and volume are
+   * this machine's, and a shared vault is the last place they belong - two coaches
+   * would otherwise take turns overwriting each other's settings.
+   */
+  constructor(vaults, prefsFile){
     this.vaults = vaults;
+    this.prefsFile = prefsFile;
+    this.author = 'me';
     this.stores = new Map();
+  }
+
+  setAuthor(author){
+    if (!author) return;
+    this.author = author;
+    for (const s of this.stores.values()) s.setAuthor(author);
   }
 
   /* Opened lazily, so an unplugged drive costs nothing until something asks for it. */
   storeFor(id){
     const v = this.vaults.byId(id);
     if (!v || !this.vaults.available(v)) return null;
-    if (!this.stores.has(id)) this.stores.set(id, new FolderStore(v.path));
+    if (!this.stores.has(id)) this.stores.set(id, new FolderStore(v.path, this.author));
     return this.stores.get(id);
   }
 
@@ -51,11 +67,7 @@ class VaultStore {
 
   get(key){
     if (key === INDEX_KEY) return this._readLibrary();
-    /* prefs are this machine's, not a vault's - always the first one */
-    if (key === PREFS_KEY){
-      const s = this.storeFor(this.vaults.first().id);
-      return s ? s.get(PREFS_KEY) : null;
-    }
+    if (key === PREFS_KEY) return this._readPrefs();
     const { id, inner } = this.route(key);
     const store = this.storeFor(id);
     return store ? store.get(inner) : null;
@@ -64,8 +76,13 @@ class VaultStore {
   set(key, value){
     if (key === INDEX_KEY) return this._writeLibrary(value);
     if (key === PREFS_KEY){
-      const s = this.storeFor(this.vaults.first().id);
-      return s ? s.set(PREFS_KEY, value) : false;
+      try {
+        fs.mkdirSync(path.dirname(this.prefsFile), { recursive: true });
+        const tmp = this.prefsFile + '.' + process.pid + '.tmp';
+        fs.writeFileSync(tmp, value);
+        fs.renameSync(tmp, this.prefsFile);
+        return true;
+      } catch (e) { return false; }
     }
     const { id, inner } = this.route(key);
     const store = this.storeFor(id);
@@ -84,20 +101,27 @@ class VaultStore {
     return store ? store.moveSession(inner, groupPath) : false;
   }
 
+  /* Settings used to live in the first vault. Read them from there once, so upgrading
+     does not hand anyone a blank name and a reset theme. */
+  _readPrefs(){
+    try { return fs.readFileSync(this.prefsFile, 'utf8'); } catch (e) {}
+    const first = this.vaults.first();
+    const s = first ? this.storeFor(first.id) : null;
+    const old = s ? s.get(PREFS_KEY) : null;
+    if (old) this.set(PREFS_KEY, old);
+    return old;
+  }
+
   /* Every vault's keys, each carrying its vault, plus the two that are not a vault's:
      the merged library and this machine's prefs. */
   keys(){
-    const out = [INDEX_KEY];
-    let sawPrefs = false;
+    const out = [INDEX_KEY, PREFS_KEY];
     for (const v of this.vaults.list()){
       const store = this.storeFor(v.id);
       if (!store) continue;
       for (const k of store.keys()){
-        if (k === INDEX_KEY) continue;
-        if (k === PREFS_KEY){
-          if (v.id === this.vaults.first().id && !sawPrefs){ out.push(PREFS_KEY); sawPrefs = true; }
-          continue;
-        }
+        /* both of these are the store's own, not a vault's */
+        if (k === INDEX_KEY || k === PREFS_KEY) continue;
         out.push(withVault(v.id, k));
       }
     }

@@ -95,6 +95,31 @@ a vault on their own machine. Everyone's notes land in the same place, and becau
 is keyed by the video's filename and size, you can each keep your own copy of the footage
 wherever you like and still be looking at the same session.
 
+**Each coach writes their own file.** Inside a session folder you will see one
+`notes.<name>.json` per person, and the app unions them on read:
+
+```
+Jack round 1/
+  notes.carel-7f3a.json     only Carel's app writes this
+  notes.marius-2b91.json    only Marius's app writes this
+  drawings/
+```
+
+That is what makes a shared folder safe. Two machines never write the same file, so Drive
+has nothing to resolve and cannot fork anything into a "conflicted copy" you would never
+see. Comment on someone else's note and only your comment goes in your file; their note
+stays theirs. Delete one and the deletion is recorded so it reaches everyone, while the
+note itself stays in your trash.
+
+Changes show when a session is next opened, not while you are watching it. Two coaches
+working on the same session at the same moment will each see the other's notes on their
+next open, which for match analysis is soon enough.
+
+The one thing that is not merged is a session's **summary**, because it is a single piece
+of free text rather than a list with ids. You get your own; if you have not written one you
+see whoever wrote most recently, and editing it makes it yours. Nobody's summary is ever
+overwritten by anybody else.
+
 This folder used to sit beside whichever exe you ran, which sounded tidier than it was:
 installing the app while also running the portable build gave each its own separate notes,
 and they drifted apart within the hour.

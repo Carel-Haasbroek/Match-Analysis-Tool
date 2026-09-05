@@ -57,6 +57,23 @@ function check(name, cond, detail){ results.push({ name, pass: !!cond, detail })
 const wait = (ms) => new Promise((r) => setTimeout(r, ms));
 const run = (win, code) => win.webContents.executeJavaScript(code);
 
+/* Each coach keeps their own index, named for them, so a vault has one or more
+   library.<author>.json rather than a single file with a fixed name. */
+function libraryFiles(root){
+  try { return fs.readdirSync(root).filter((n) => /^library\..+\.json$/.test(n)); }
+  catch (e) { return []; }
+}
+function readLibrary(root){
+  const out = [];
+  for (const name of libraryFiles(root)){
+    try {
+      const list = JSON.parse(fs.readFileSync(path.join(root, name), 'utf8'));
+      if (Array.isArray(list)) for (const e of list) out.push(e);
+    } catch (e) {}
+  }
+  return out;
+}
+
 function addVault(win, dir){
   nextFolder = dir;
   return run(win, `window.desktop.vaultAdd()`).then((r) => { nextFolder = null; return r; });
@@ -136,8 +153,8 @@ app.whenReady().then(() => {
 
       /* it landed in the right folder on disk, and not in the other one */
       check('the second vault has its own library on disk',
-            fs.existsSync(path.join(DRIVE, 'library.json')), DRIVE);
-      const firstLib = JSON.parse(fs.readFileSync(path.join(SANDBOX, 'Notes', 'library.json'), 'utf8'));
+            libraryFiles(DRIVE).length > 0, DRIVE);
+      const firstLib = readLibrary(path.join(SANDBOX, 'Notes'));
       check('the first vault was not touched by it',
             firstLib.length === 1 && firstLib[0].key === 'vnotes:home.mp4_1',
             JSON.stringify(firstLib.map((e) => e.key)));
@@ -235,7 +252,7 @@ app.whenReady().then(() => {
 
       /* the missing vault must not have been emptied by the app writing an index */
       fs.renameSync(DRIVE + ' (unplugged)', DRIVE);
-      const squadLib = JSON.parse(fs.readFileSync(path.join(DRIVE, 'library.json'), 'utf8'));
+      const squadLib = readLibrary(DRIVE);
       check('a vault that was offline was not emptied while it was away',
             squadLib.length >= 1, JSON.stringify(squadLib.map((e) => e.key)));
 

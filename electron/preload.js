@@ -11,7 +11,8 @@ contextBridge.exposeInMainWorld('storage', {
   get: (key) => ipcRenderer.invoke('store:get', key)
     .then((value) => (value == null ? null : { value })),
   set: (key, value) => ipcRenderer.invoke('store:set', key, value),
-  keys: () => ipcRenderer.invoke('store:keys')
+  keys: () => ipcRenderer.invoke('store:keys'),
+  setAuthor: (author) => ipcRenderer.invoke('store:author', author)
 });
 
 /* Everything the browser cannot do. Its presence is how app.js detects desktop. */

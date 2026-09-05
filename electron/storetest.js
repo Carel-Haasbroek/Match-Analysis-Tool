@@ -83,18 +83,21 @@ function main(){
   /* the point of the exercise: is it actually browsable */
   const dir = path.join(root, 'Jack round 1');
   ok('session folder is named for the session', fs.existsSync(dir), dir);
-  ok('session.json is small and readable',
-     fs.statSync(path.join(dir, 'session.json')).size < 2000);
+  /* one file per coach now; with no name set yet the store writes as "me" */
+  ok('the notes file is small and readable',
+     fs.statSync(path.join(dir, 'notes.me.json')).size < 2000);
   const drawings = fs.readdirSync(path.join(dir, 'drawings'));
   eq('drawings written as separate files', drawings.length, 3);
   ok('drawings are real PNGs', drawings.every((f) => {
     const b = fs.readFileSync(path.join(dir, 'drawings', f));
     return b[0] === 0x89 && b.toString('ascii', 1, 4) === 'PNG';
   }), drawings.join(', '));
-  ok('drawing filenames carry their timestamp', drawings.some((f) => f.indexOf('12-400') >= 0),
+  /* named for the note, so two coaches adding one cannot collide and inserting a note
+     stops renaming every file after it */
+  ok('drawing filenames carry their note id', drawings.some((f) => f.indexOf('a.') === 0),
      drawings.join(', '));
   eq('summary is markdown on disk',
-     fs.readFileSync(path.join(dir, 'summary.md'), 'utf8'), 'Solid round.');
+     fs.readFileSync(path.join(dir, 'summary.me.md'), 'utf8'), 'Solid round.');
   eq('summary round-trips with its timestamp',
      JSON.parse(fsx.get('vnotes:summary:vnotes:Jack_1.mp4_65939131')).updated, 1756900000000);
 
@@ -106,7 +109,7 @@ function main(){
   /* grouping = moving the folder */
   ok('a session can be moved into a group', fsx.moveSession('vnotes:Jack_1.mp4_65939131', 'Competition 2026'));
   ok('it lives in the group folder now',
-     fs.existsSync(path.join(root, 'Competition 2026', 'Jack round 1', 'session.json')));
+     fs.existsSync(path.join(root, 'Competition 2026', 'Jack round 1', 'notes.me.json')));
   eq('and still reads back after the move',
      JSON.parse(fsx.get('vnotes:Jack_1.mp4_65939131')).length, 1);
   ok('nested groups work', fsx.moveSession('vnotes:Jack_1.mp4_65939131', 'Competition 2026/Nationals'));
@@ -130,7 +133,7 @@ function main(){
   /* moving back out must not invent a folder from the empty path */
   ok('a session can be moved back to the top level', fsx.moveSession('vnotes:Jack_1.mp4_65939131', ''));
   ok('and lands at the top level, not in a folder called session',
-     fs.existsSync(path.join(root, 'Jack round 1', 'session.json')) &&
+     fs.existsSync(path.join(root, 'Jack round 1', 'notes.me.json')) &&
      !fs.existsSync(path.join(root, 'session')),
      JSON.stringify(fsx.paths));
   eq('still readable at the top level',
@@ -141,7 +144,7 @@ function main(){
   eq('a non-session key round-trips', fsx.get('vn:smoke'), JSON.stringify({ hello: 'world' }));
   ok('and is listed by keys()', fsx.keys().indexOf('vn:smoke') >= 0, fsx.keys().join(','));
   ok('without creating a bogus session folder',
-     !fs.existsSync(path.join(root, 'vn smoke', 'session.json')));
+     !fs.existsSync(path.join(root, 'vn smoke', 'notes.me.json')));
 
   /* survives a restart */
   const reopened = new FolderStore(root);
@@ -174,7 +177,7 @@ function main(){
   eq('the migrated summary survives',
      JSON.parse(target.get('vnotes:summary:vnotes:m1')).text, 'notes on match one');
   ok('migrated session uses its real name',
-     fs.existsSync(path.join(tmp, 'Notes2', 'Match one', 'session.json')));
+     fs.existsSync(path.join(tmp, 'Notes2', 'Match one', 'notes.me.json')));
 
   const again = migrateIfNeeded(oldDir, target, function(){});
   eq('migration does not run twice', again.migrated, 0);

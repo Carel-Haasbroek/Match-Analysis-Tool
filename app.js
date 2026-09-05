@@ -64,6 +64,9 @@
   var legacyAuthor = '';
   /* The note whose comment box should regain focus after a re-render. */
   var focusNoteId = null;
+  /* This install, so two coaches both called "Coach" get their own files in a shared
+     vault. Kept with prefs, which are per-machine. */
+  var authorId = '';
 
   var LIB_KEY = 'vnotes:index', LIB_MAX = 40;
 
@@ -1377,7 +1380,8 @@
       muted: muted,
       theme: theme,
       userName: userName,
-      legacyAuthor: legacyAuthor
+      legacyAuthor: legacyAuthor,
+      authorId: authorId
     });
   }
 
@@ -1409,6 +1413,10 @@
       applyTheme(typeof p.theme === 'string' ? p.theme : '', false);
       userName = typeof p.userName === 'string' ? p.userName : '';
       legacyAuthor = typeof p.legacyAuthor === 'string' ? p.legacyAuthor : '';
+      authorId = typeof p.authorId === 'string' && p.authorId ? p.authorId
+                                                             : Math.random().toString(36).slice(2, 6);
+      if (p.authorId !== authorId) savePrefs();
+      sendAuthor();
       refreshWho();
       renderNotes();
       if (!userName) askName(true);
@@ -1885,6 +1893,16 @@
     }, 400);
   }
 
+  /* The file this app writes into inside a shared session folder. The name is there so
+     the folder stays readable; the install id is there so two coaches with the same name
+     still get a file each. */
+  function sendAuthor(){
+    if (!DESKTOP.setAuthor) return;
+    var who = (userName || 'me').toLowerCase().replace(/[^a-z0-9]+/g, '-')
+                .replace(/^-+|-+$/g, '').slice(0, 24) || 'me';
+    DESKTOP.setAuthor(who + '-' + (authorId || '0000'));
+  }
+
   /* ---------- vaults ---------- */
   function loadVaults(){
     if (!DESKTOP.vaults) return Promise.resolve();
@@ -2049,6 +2067,7 @@
     /* Notes that predate authorship become this person's, once. */
     if (!legacyAuthor) legacyAuthor = v;
     savePrefs();
+    sendAuthor();
     $('name-modal').classList.remove('open');
     refreshWho();
     renderNotes();
