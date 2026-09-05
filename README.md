@@ -10,7 +10,12 @@ Everything stays on your machine. Nothing is uploaded.
 
 ## Installing
 
-Two builds come out of `dist/`, one per folder so they cannot be confused. Pick one:
+**[Download the latest release.](https://github.com/Carel-Haasbroek/Match-Analysis-Tool/releases/latest)**
+That link always points at the newest one, and every release carries both builds below.
+Take one file, run it; nothing else here is needed.
+
+Building them yourself puts the same two in `dist/`, one per folder so they cannot be
+confused:
 
 | | |
 |---|---|
@@ -109,8 +114,23 @@ npm run dist
 ```
 
 Artifacts land in `dist/installer/` and `dist/portable/`; `dist/win-unpacked/` is the
-intermediate both are built from. The first build downloads a Windows toolchain, so give it a
-few minutes.
+intermediate both are built from. The first build downloads a Windows toolchain, so give it
+a few minutes.
+
+### Releasing
+
+Tagging a version is what publishes it. A workflow builds on Windows and uploads both exes
+to a GitHub Release, so binaries stay out of the repo and clones stay small.
+
+```bash
+npm version 1.0.1                        # bumps package.json, commits, tags v1.0.1
+git push origin master --follow-tags     # the tag is what triggers the build
+```
+
+Use `npm version` rather than tagging by hand. electron-builder names every artifact from
+`package.json`, never from the tag, so a tag that disagrees with it publishes a release full
+of files from the wrong version — the workflow refuses to build in that case rather than
+letting it happen quietly.
 
 ### The browser version
 

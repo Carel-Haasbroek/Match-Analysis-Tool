@@ -57,6 +57,8 @@ function main(){
   }
   console.log('dist:');
   for (const m of moved) console.log('  ' + m);
+  console.log('\nTo share these, tag a version - the release workflow builds and');
+  console.log('publishes them. See "Releasing" in README.md.');
 }
 
 main();

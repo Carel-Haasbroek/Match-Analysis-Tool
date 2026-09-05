@@ -3,3 +3,4 @@ _test-*
 dist/
 Notes/
 App/
+*.exe

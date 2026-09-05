@@ -1,0 +1,53 @@
+name: Release
+
+# Tagging a version is what ships it. Nothing here runs on an ordinary push, so
+# day-to-day commits cost no minutes and cannot publish anything by accident.
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write        # the default token is read-only; creating a Release needs write
+
+jobs:
+  windows:
+    # The NSIS installer can only be built on Windows. Public repos get unlimited minutes.
+    runs-on: windows-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      # electron-builder names every artifact, and writes latest.yml, from the version
+      # in package.json - never from the tag. Left unchecked, tagging v1.0.2 without
+      # bumping package.json publishes a v1.0.2 release full of 1.0.1 files, which is
+      # confusing to find and annoying to undo. `npm version` keeps the two in step;
+      # this catches a tag made by hand.
+      - name: Tag must match package.json
+        shell: bash
+        run: |
+          tag="${GITHUB_REF_NAME#v}"
+          pkg="$(node -p "require('./package.json').version")"
+          if [ "$tag" != "$pkg" ]; then
+            echo "tag $GITHUB_REF_NAME does not match package.json version $pkg"
+            exit 1
+          fi
+          echo "releasing $pkg"
+
+      - run: npm ci
+
+      # The headless pair. The Electron-driven suites open real windows and are run
+      # locally rather than here.
+      - run: npm test
+
+      # Not `npm run dist`: that appends the local tidy-up step, which has nothing to
+      # do here and would run after publishing anyway.
+      - name: Build and publish
+        run: npx electron-builder --publish always
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}

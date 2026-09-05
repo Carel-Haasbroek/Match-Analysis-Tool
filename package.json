@@ -17,6 +17,13 @@
   "build": {
     "appId": "com.videonotes.app",
     "productName": "Video Notes",
+    "publish": [
+      {
+        "provider": "github",
+        "owner": "Carel-Haasbroek",
+        "repo": "Match-Analysis-Tool"
+      }
+    ],
     "directories": {
       "output": "dist"
     },
