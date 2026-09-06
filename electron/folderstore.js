@@ -467,24 +467,42 @@ class FolderStore {
 
   _readSummary(dir){ return this._readSummaryAcross([dir]); }
 
-  /* Each coach keeps their own index; they are merged by key, newest opening winning. */
+  /*
+   * Each coach keeps their own index; they are merged by key, newest opening winning.
+   *
+   * library.json is different from the rest: it is the single index written before
+   * there was one per coach, so it is a snapshot of how things were, not a record
+   * anybody still updates. It has to lose a tie. It was winning them - read first,
+   * kept unless something was strictly newer - which pinned those sessions to the
+   * folder they were in before folders existed. Moving one appeared to work and was
+   * back where it started on the next read, because a tie on lastOpened is exactly
+   * what you get for a session nobody has opened since.
+   */
   _readLibrary(){
     const lists = [];
     const legacy = parseJson(readIfPresent(path.join(this.root, 'library.json')));
-    if (Array.isArray(legacy)) lists.push(legacy);
+    if (Array.isArray(legacy)) lists.push({ entries: legacy, legacy: true });
     for (const name of listDir(this.root)){
       if (!LIBRARY_FILE.test(name)) continue;
       const doc = parseJson(readIfPresent(path.join(this.root, name)));
-      if (Array.isArray(doc)) lists.push(doc);
+      if (Array.isArray(doc)) lists.push({ entries: doc, legacy: false });
     }
     if (!lists.length) return null;
 
     const byKey = new Map();
+    const stale = new Set();                  /* keys currently held by the old snapshot */
     for (const list of lists){
-      for (const e of list){
+      for (const e of list.entries){
         if (!e || !e.key) continue;
         const have = byKey.get(e.key);
-        if (!have || (e.lastOpened || 0) > (have.lastOpened || 0)) byKey.set(e.key, e);
+        const newer = have && (e.lastOpened || 0) > (have.lastOpened || 0);
+        /* a coach's own file takes a tie off the old snapshot, but never off another coach */
+        const unseats = have && !list.legacy && stale.has(e.key) &&
+                        (e.lastOpened || 0) >= (have.lastOpened || 0);
+        if (!have || newer || unseats){
+          byKey.set(e.key, e);
+          if (list.legacy) stale.add(e.key); else stale.delete(e.key);
+        }
       }
     }
     const out = Array.from(byKey.values());
