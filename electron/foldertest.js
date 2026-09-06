@@ -24,6 +24,23 @@ function check(name, cond, detail){ results.push({ name, pass: !!cond, detail })
 const wait = (ms) => new Promise((r) => setTimeout(r, ms));
 function run(win, code){ return win.webContents.executeJavaScript(code); }
 
+/*
+ * Answer the app's own text prompt. Stubbing window.prompt would prove nothing here:
+ * Electron does not implement it - it throws - which is exactly the bug this modal
+ * exists to fix, and a stubbed test would have gone on passing while the button did
+ * nothing at all.
+ */
+async function answerAsk(win, text){
+  const seen = await run(win, `document.getElementById('ask-modal').classList.contains('open')`);
+  if (!seen) return false;
+  await run(win, `(function(){
+    document.getElementById('ask-input').value = ${JSON.stringify(text)};
+    document.getElementById('ask-form').dispatchEvent(
+      new Event('submit', { bubbles: true, cancelable: true }));
+  })()`);
+  return true;
+}
+
 function dirsUnder(root){
   const out = [];
   (function walk(d, rel){
@@ -165,6 +182,105 @@ app.whenReady().then(() => {
       })()`);
       check('its notes are still readable after moving back', stillReadable === 1,
             String(stillReadable));
+
+      /* ---------- folders that exist on their own ---------- */
+      /* A folder used to be a property on a library entry, so an empty one had nowhere
+         to live and disappeared on the next read. These are real directories now. */
+      await run(win, `document.getElementById('sessions-btn').click()`);
+      await wait(600);
+
+      await run(win, `document.getElementById('new-folder-btn').click()`);
+      await wait(500);
+      check('New folder asks for a name', await answerAsk(win, 'Drills/Guard'));
+      await wait(1200);
+      const made = await run(win, `[].slice.call(
+        document.querySelectorAll('#sessions-tree .tree-name')).map(function(e){
+          return e.textContent; })`);
+      check('a folder can be made, and nests',
+            made.indexOf('Drills') >= 0 && made.indexOf('Guard') >= 0, JSON.stringify(made));
+      check('and it is a real directory',
+            fs.existsSync(path.join(NOTES, 'Drills', 'Guard')), dirsUnder(NOTES).join(' | '));
+
+      await run(win, `location.reload()`);
+      await wait(2500);
+      await run(win, `document.getElementById('sessions-btn').click()`);
+      await wait(800);
+      const survived = await run(win, `[].slice.call(
+        document.querySelectorAll('#sessions-tree .tree-name')).map(function(e){
+          return e.textContent; })`);
+      check('an empty folder survives a reload, which it never used to',
+            survived.indexOf('Guard') >= 0, JSON.stringify(survived));
+
+      /* ---------- dragging a session into it ---------- */
+      const dropped = await run(win, `(function(){
+        var rows = [].slice.call(document.querySelectorAll('#sessions-tree .recent-row'));
+        var row = rows.filter(function(r){
+          return r.querySelector('.recent-label').textContent === 'Training drill'; })[0];
+        if (!row) return 'no row';
+        var folders = [].slice.call(document.querySelectorAll('#sessions-tree .tree-folder'));
+        var target = folders.filter(function(f){
+          var n = f.querySelector('.tree-name');
+          return n && n.textContent === 'Guard'; })[0];
+        if (!target) return 'no folder';
+        var dt = new DataTransfer();
+        row.dispatchEvent(new DragEvent('dragstart', { dataTransfer: dt, bubbles: true }));
+        target.dispatchEvent(new DragEvent('dragover', { dataTransfer: dt, bubbles: true, cancelable: true }));
+        target.dispatchEvent(new DragEvent('drop', { dataTransfer: dt, bubbles: true, cancelable: true }));
+        return 'dropped';
+      })()`);
+      check('a session can be dragged onto a folder', dropped === 'dropped', dropped);
+      await wait(1500);
+
+      check('and it lands there on disk, not just on screen',
+            dirsUnder(NOTES).indexOf('Drills/Guard/Training drill') >= 0,
+            dirsUnder(NOTES).join(' | '));
+      const movedNotes = await run(win, `(async function(){
+        var v = await window.storage.get('vnotes:c.mp4_3');
+        return v ? JSON.parse(v.value).length : 0;
+      })()`);
+      check('its notes came along', movedNotes === 1, String(movedNotes));
+
+      /* ---------- renaming and removing ---------- */
+      await run(win, `(function(){
+        var folders = [].slice.call(document.querySelectorAll('#sessions-tree .tree-folder'));
+        var f = folders.filter(function(x){
+          var n = x.querySelector('.tree-name');
+          return n && n.textContent === 'Guard'; })[0];
+        f.querySelector('.tree-act').click();
+      })()`);
+      await wait(500);
+      check('renaming a folder asks for the new name', await answerAsk(win, 'Guard passing'));
+      await wait(1500);
+      check('a folder can be renamed, and takes its sessions with it',
+            dirsUnder(NOTES).indexOf('Drills/Guard passing/Training drill') >= 0,
+            dirsUnder(NOTES).join(' | '));
+
+      /* a folder with something in it must not offer a remove at all */
+      const acts = await run(win, `(function(){
+        var folders = [].slice.call(document.querySelectorAll('#sessions-tree .tree-folder'));
+        var full = folders.filter(function(x){
+          var n = x.querySelector('.tree-name');
+          return n && n.textContent === 'Guard passing'; })[0];
+        return full ? full.querySelectorAll('.tree-act').length : -1;
+      })()`);
+      check('a folder holding sessions offers no remove', acts === 1, String(acts));
+
+      await run(win, `document.getElementById('new-folder-btn').click()`);
+      await wait(500);
+      await answerAsk(win, 'Spare');
+      await wait(1200);
+      await run(win, `window.confirm = function(){ return true; };
+        (function(){
+          var folders = [].slice.call(document.querySelectorAll('#sessions-tree .tree-folder'));
+          var f = folders.filter(function(x){
+            var n = x.querySelector('.tree-name');
+            return n && n.textContent === 'Spare'; })[0];
+          var buttons = f.querySelectorAll('.tree-act');
+          buttons[buttons.length - 1].click();
+        })()`);
+      await wait(1200);
+      check('an empty folder can be removed',
+            !fs.existsSync(path.join(NOTES, 'Spare')), dirsUnder(NOTES).join(' | '));
 
     } catch (err) {
       check('test ran without throwing', false, String(err));

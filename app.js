@@ -961,6 +961,22 @@
      something worth writing to the notes folder. */
   var collapsed = {};
 
+  /* Folders that hold nothing still exist on disk, so the tree asks the vault for them
+     rather than inferring the whole shape from the sessions. */
+  var folderIndex = {};
+
+  function loadFolders(){
+    if (!DESKTOP.folders) return Promise.resolve();
+    var live = vaults.filter(function(v){ return v.available; });
+    return Promise.all(live.map(function(v){
+      return Promise.resolve(DESKTOP.folders(v.id)).then(function(list){
+        folderIndex[v.id] = Array.isArray(list) ? list : [];
+      });
+    }));
+  }
+
+  function onlyVault(){ return vaults.length ? vaults[0].id : ''; }
+
   function renderSessionTree(){
     var host = $('sessions-tree');
     host.innerHTML = '';
@@ -972,29 +988,52 @@
         })
       : library;
 
-    if (!library.length){
+    var root = node('', '', '');
+
+    /*
+     * A node knows which vault it belongs to and its folder path *within* that vault,
+     * because the path drawn on screen carries the vault's name in front of it once
+     * there is more than one. Dropping onto a node needs the vault-relative one.
+     */
+    function nodeFor(vaultId, folderPath){
+      var at = root, acc = '', rel = [];
+      var segs = [];
+      var showVault = vaults.length > 1;
+      if (showVault) segs.push(vaultName(vaultId) || 'Vault');
+      String(folderPath || '').split('/').forEach(function(p){
+        p = p.trim();
+        if (p) segs.push(p);
+      });
+      segs.forEach(function(part, i){
+        acc = acc ? acc + '/' + part : part;
+        var isVaultRoot = showVault && i === 0;
+        if (!isVaultRoot) rel.push(part);
+        if (!at.kids[part]) at.kids[part] = node(acc, vaultId, isVaultRoot ? '' : rel.join('/'));
+        at = at.kids[part];
+        at.isVaultRoot = isVaultRoot;
+      });
+      return at;
+    }
+
+    /* folders first, so an empty one still draws */
+    vaults.forEach(function(v){
+      if (!v.available) return;
+      (folderIndex[v.id] || []).forEach(function(f){
+        if (q && f.toLowerCase().indexOf(q) < 0 &&
+            (vaultName(v.id) || '').toLowerCase().indexOf(q) < 0) return;
+        nodeFor(v.id, f);
+      });
+    });
+    shown.forEach(function(e){ nodeFor(e.vault || onlyVault(), folderOf(e)).entries.push(e); });
+
+    if (!library.length && !Object.keys(root.kids).length){
       host.appendChild(emptyLine('Nothing yet. Open a video or a link and it shows up here.'));
       return;
     }
-    if (!shown.length){
+    if (q && !shown.length && !Object.keys(root.kids).length){
       host.appendChild(emptyLine('No session matches "' + $('session-filter').value.trim() + '".'));
       return;
     }
-
-    /* build the folder tree from the paths themselves, with the vault as the outermost
-       level once there is more than one - the same shape the folders already draw */
-    var root = node('');
-    shown.forEach(function(e){
-      var at = root;
-      treePathOf(e).split('/').forEach(function(part){
-        part = part.trim();
-        if (!part) return;
-        var path = at.path ? at.path + '/' + part : part;
-        if (!at.kids[part]) at.kids[part] = node(path);
-        at = at.kids[part];
-      });
-      at.entries.push(e);
-    });
 
     Object.keys(root.kids).sort().forEach(function(k){ drawFolder(root.kids[k], host, 0); });
     if (root.entries.length){
@@ -1002,12 +1041,15 @@
         var loose = document.createElement('div');
         loose.className = 'tree-folder loose';
         loose.textContent = 'Not in a folder';
+        dropInto(loose, { vaultId: onlyVault(), folder: '' });
         host.appendChild(loose);
       }
       root.entries.forEach(function(e){ host.appendChild(sessionRow(e, 0)); });
     }
 
-    function node(path){ return { path: path, kids: {}, entries: [] }; }
+    function node(path, vaultId, folder){
+      return { path: path, vaultId: vaultId, folder: folder, kids: {}, entries: [] };
+    }
     function emptyLine(text){
       var d = document.createElement('div');
       d.className = 'recent-empty';
@@ -1024,7 +1066,8 @@
       /* a search result inside a folded folder would otherwise be invisible */
       var open = q ? true : !collapsed[n.path];
       var head = document.createElement('div');
-      head.className = 'tree-folder' + (open ? '' : ' shut');
+      head.className = 'tree-folder' + (open ? '' : ' shut') +
+                       (n.isVaultRoot ? ' vault-root' : '');
       head.style.paddingLeft = (10 + depth * 16) + 'px';
 
       var caret = document.createElement('span');
@@ -1038,16 +1081,175 @@
       count.textContent = countIn(n);
 
       head.appendChild(caret); head.appendChild(name); head.appendChild(count);
+
+      /* a vault's own row is not a folder, so it can be dropped onto but not renamed */
+      if (!n.isVaultRoot){
+        var ren = document.createElement('button');
+        ren.type = 'button';
+        ren.className = 'tree-act';
+        ren.textContent = '✎';
+        ren.title = 'Rename this folder';
+        ren.addEventListener('click', function(e){ e.stopPropagation(); renameFolder(n); });
+        head.appendChild(ren);
+
+        /* only an empty folder can be removed: this must never delete notes */
+        if (countIn(n) === 0){
+          var del = document.createElement('button');
+          del.type = 'button';
+          del.className = 'tree-act';
+          del.textContent = '✕';
+          del.title = 'Remove this empty folder';
+          del.addEventListener('click', function(e){ e.stopPropagation(); removeFolder(n); });
+          head.appendChild(del);
+        }
+      }
+
       head.addEventListener('click', function(){
         collapsed[n.path] = !collapsed[n.path];
         renderSessionTree();
       });
+      dropInto(head, n);
       host.appendChild(head);
       if (!open) return;
 
       Object.keys(n.kids).sort().forEach(function(k){ drawFolder(n.kids[k], host, depth + 1); });
       n.entries.forEach(function(e){ host.appendChild(sessionRow(e, depth + 1)); });
     }
+  }
+
+  /* ---------- dragging a session somewhere ---------- */
+  var dragKey = null;
+
+  function dragOut(row, entry){
+    row.setAttribute('draggable', 'true');
+    row.addEventListener('dragstart', function(e){
+      dragKey = entry.key;
+      try { e.dataTransfer.setData('text/plain', entry.key); } catch (err) {}
+      e.dataTransfer.effectAllowed = 'move';
+      row.classList.add('dragging');
+    });
+    row.addEventListener('dragend', function(){
+      dragKey = null;
+      row.classList.remove('dragging');
+    });
+  }
+
+  function dropInto(el, target){
+    el.addEventListener('dragover', function(e){
+      e.preventDefault();
+      e.dataTransfer.dropEffect = 'move';
+      el.classList.add('drop-into');
+    });
+    el.addEventListener('dragleave', function(){ el.classList.remove('drop-into'); });
+    el.addEventListener('drop', function(e){
+      e.preventDefault();
+      e.stopPropagation();
+      el.classList.remove('drop-into');
+      var key = dragKey;
+      try { key = e.dataTransfer.getData('text/plain') || dragKey; } catch (err) {}
+      if (key) dropSession(key, target);
+    });
+  }
+
+  function dropSession(key, target){
+    var entry = entryFor(key);
+    if (!entry) return;
+    var toVault = target.vaultId || onlyVault();
+    var toFolder = target.folder || '';
+    var fromVault = entry.vault || onlyVault();
+
+    if (fromVault === toVault){
+      if (folderOf(entry) === toFolder) return;
+      setEntryFolder(entry, toFolder);
+      return;
+    }
+
+    /* the one drag that moves files between roots, so it asks first */
+    if (!DESKTOP.moveToVault) return;
+    if (!confirm('Move “' + entryName(entry) + '” from ' + vaultName(fromVault) +
+                 ' to ' + vaultName(toVault) + '?\n\n' +
+                 'Its notes move with it, including any other coach\'s.')) return;
+
+    DESKTOP.moveToVault(entry.key, toVault, toFolder).then(function(r){
+      if (!r || !r.ok){
+        setNotice(r && r.reason === 'exists'
+          ? vaultName(toVault) + ' already has that session. Use Export all notes and ' +
+            'Import backup to combine the two.'
+          : 'That could not be moved: ' + ((r && r.reason) || 'unknown'), 12000);
+        return;
+      }
+      if (videoKey === entry.key){ videoKey = r.key; if (source) source.key = r.key; }
+      entry.key = r.key;
+      entry.vault = toVault;
+      if (toFolder) entry.folder = toFolder; else delete entry.folder;
+      saveLibrary();
+      setNotice('Moved “' + entryName(entry) + '” to ' + vaultName(toVault) + '.');
+      loadFolders().then(loadLibrary);
+    });
+  }
+
+  /* ---------- making and changing folders ---------- */
+  function foldersFor(vaultId){ return folderIndex[vaultId] || []; }
+
+  function newFolder(){
+    if (!DESKTOP.folderCreate) return;
+    /* which vault only needs asking when there is more than one to choose from */
+    var choices = vaults.length > 1
+      ? vaults.filter(function(v){ return v.available; })
+              .map(function(v){ return { value: v.id, label: v.name }; })
+      : [];
+
+    askText({
+      title: 'New folder',
+      hint: 'Use / to nest, as in “Competition 2026/Nationals”.',
+      label: 'Folder name',
+      placeholder: 'Competition 2026',
+      choiceLabel: 'In which vault',
+      choices: choices,
+      choice: defaultVault()
+    }).then(function(r){
+      if (!r) return;
+      var vaultId = choices.length ? r.choice : onlyVault();
+      return Promise.resolve(DESKTOP.folderCreate(vaultId, r.text))
+        .then(loadFolders).then(renderSessionTree);
+    });
+  }
+
+  function renameFolder(n){
+    if (!DESKTOP.folderRename) return;
+    var was = n.folder;
+    var leaf = was.split('/').pop();
+
+    askText({ title: 'Rename folder', label: 'Folder name', value: leaf }).then(function(r){
+      if (!r || r.text === leaf) return;
+      var parent = was.split('/').slice(0, -1).join('/');
+      var to = parent ? parent + '/' + r.text : r.text;
+      return renameFolderTo(n, was, to);
+    });
+  }
+
+  function renameFolderTo(n, was, to){
+    return Promise.resolve(DESKTOP.folderRename(n.vaultId, was, to)).then(function(ok){
+      if (!ok){ setNotice('That folder could not be renamed.'); return; }
+      /* the sessions moved with the directory, so their entries follow */
+      library.forEach(function(e){
+        if ((e.vault || onlyVault()) !== n.vaultId) return;
+        var f = folderOf(e);
+        if (f === was) e.folder = to;
+        else if (f.indexOf(was + '/') === 0) e.folder = to + f.slice(was.length);
+      });
+      saveLibrary();
+      loadFolders().then(loadLibrary);
+    });
+  }
+
+  function removeFolder(n){
+    if (!DESKTOP.folderRemove) return;
+    if (!confirm('Remove the empty folder “' + n.folder + '”?')) return;
+    Promise.resolve(DESKTOP.folderRemove(n.vaultId, n.folder)).then(function(ok){
+      if (!ok){ setNotice('That folder still has sessions in it.'); return; }
+      loadFolders().then(renderSessionTree);
+    });
   }
 
   /* a vault reads as one more level of folder, so the tree needs no special case */
@@ -1061,6 +1263,7 @@
   function sessionRow(entry, depth){
     var row = renderRow(entry);
     row.style.paddingLeft = (10 + (depth || 0) * 16) + 'px';
+    dragOut(row, entry);
     return row;
   }
 
@@ -1185,8 +1388,12 @@
         e.stopPropagation();
         var v = move.value;
         if (v === NEW_FOLDER_OPTION){
-          v = (prompt('Folder name (use / to nest)', folderOf(entry)) || '').trim();
-          if (!v){ renderRecent(); return; }
+          askText({ title: 'New folder', label: 'Folder name',
+                    hint: 'Use / to nest.', value: folderOf(entry) }).then(function(r){
+            if (!r){ renderRecent(); return; }
+            setEntryFolder(entry, r.text);
+          });
+          return;
         }
         setEntryFolder(entry, v);
       });
@@ -1211,7 +1418,8 @@
     saveLibrary();
     /* on the desktop the folder is real: move the directory to match */
     if (DESKTOP.moveSession){
-      DESKTOP.moveSession(entry.key, entry.folder || '').then(function(){ renderRecent(); });
+      DESKTOP.moveSession(entry.key, entry.folder || '')
+        .then(loadFolders).then(function(){ renderRecent(); });
     } else {
       renderRecent();
     }
@@ -1822,6 +2030,59 @@
     });
   }
 
+  /* ---------- asking for a line of text ---------- */
+  /*
+   * Electron does not implement window.prompt - it throws "prompt() is not supported" -
+   * so every place that needed a name got one back and silently did nothing. This is
+   * the replacement, and it returns a promise so the callers read the same way.
+   */
+  var askResolve = null;
+
+  function askText(opts){
+    opts = opts || {};
+    $('ask-title').textContent = opts.title || 'Name';
+    var hint = $('ask-hint');
+    hint.textContent = opts.hint || '';
+    hint.classList.toggle('hidden', !opts.hint);
+    $('ask-label').textContent = opts.label || 'Name';
+
+    var input = $('ask-input');
+    input.value = opts.value || '';
+    input.placeholder = opts.placeholder || '';
+
+    var choices = opts.choices || [], sel = $('ask-choice');
+    $('ask-choice-row').classList.toggle('hidden', !choices.length);
+    $('ask-choice-label').textContent = opts.choiceLabel || '';
+    sel.innerHTML = '';
+    choices.forEach(function(c){
+      var o = document.createElement('option');
+      o.value = c.value;
+      o.textContent = c.label;
+      sel.appendChild(o);
+    });
+    if (choices.length && opts.choice) sel.value = opts.choice;
+
+    $('ask-modal').classList.add('open');
+    setTimeout(function(){ input.focus(); input.select(); }, 30);
+    return new Promise(function(resolve){ askResolve = resolve; });
+  }
+
+  function closeAsk(value){
+    $('ask-modal').classList.remove('open');
+    var r = askResolve;
+    askResolve = null;
+    if (r) r(value);
+  }
+
+  $('ask-form').addEventListener('submit', function(e){
+    e.preventDefault();
+    var text = $('ask-input').value.trim();
+    if (!text){ $('ask-input').focus(); return; }
+    closeAsk({ text: text, choice: $('ask-choice').value });
+  });
+  $('ask-cancel').addEventListener('click', function(){ closeAsk(null); });
+  wireModal($('ask-modal'), function(){ closeAsk(null); });
+
   function segmentOn(){ return $('segment-toggle').checked; }
 
   function openNewSession(){
@@ -1862,6 +2123,7 @@
 
   function openSessionsModal(){
     sessionsModal.classList.add('open');
+    loadFolders().then(renderSessionTree);
     renderSessionTree();
     setTimeout(function(){ $('session-filter').focus(); }, 30);
   }
@@ -1869,6 +2131,7 @@
   $('sessions-btn').addEventListener('click', openSessionsModal);
   $('see-all-btn').addEventListener('click', openSessionsModal);
   $('sessions-close').addEventListener('click', closeSessionsModal);
+  if (DESKTOP.folderCreate) $('new-folder-btn').addEventListener('click', newFolder);
   wireModal(sessionsModal, closeSessionsModal);
 
   /* Help sits over settings rather than replacing it, so closing it puts you back
@@ -1979,8 +2242,8 @@
   function showVaultFooter(){
     var el = $('notes-folder');
     if (!el || vaults.length < 2) return;
-    el.textContent = vaults.length + ' vaults · manage them in Settings';
-    el.title = 'Open Settings';
+    el.textContent = vaults.length + ' vaults · manage them in Preferences';
+    el.title = 'Open Preferences';
     el.classList.remove('hidden');
     el.onclick = function(){
       closeSessionsModal();
@@ -2036,9 +2299,12 @@
       ren.textContent = '✎';
       ren.title = 'Rename this vault';
       ren.addEventListener('click', function(){
-        var v2 = (prompt('Name for this vault', v.name) || '').trim();
-        if (!v2) return;
-        DESKTOP.vaultRename(v.id, v2).then(refreshVaults);
+        askText({ title: 'Rename vault', label: 'Name', value: v.name,
+                  hint: 'The name is only ours. The folder keeps its own.' })
+          .then(function(r){
+            if (!r) return;
+            return DESKTOP.vaultRename(v.id, r.text).then(refreshVaults);
+          });
       });
       row.appendChild(ren);
 

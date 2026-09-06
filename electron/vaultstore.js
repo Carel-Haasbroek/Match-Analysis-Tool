@@ -27,6 +27,33 @@ const VAULT_RE = /^vault:([^|]+)\|([\s\S]+)$/;
 
 function withVault(id, inner){ return 'vault:' + id + '|' + inner; }
 
+/* Every file, by path and size. Returns what differs, or null when the two match -
+   the check that has to pass before the original is removed. */
+function compareTrees(a, b){
+  const list = (root) => {
+    const out = new Map();
+    const walk = (dir, rel) => {
+      let names;
+      try { names = fs.readdirSync(dir, { withFileTypes: true }); } catch (e) { return; }
+      for (const e of names){
+        const full = path.join(dir, e.name);
+        const r = rel ? rel + '/' + e.name : e.name;
+        if (e.isDirectory()) walk(full, r);
+        else { try { out.set(r, fs.statSync(full).size); } catch (err) { out.set(r, -1); } }
+      }
+    };
+    walk(root, '');
+    return out;
+  };
+  const A = list(a), B = list(b);
+  if (A.size !== B.size) return A.size + ' files became ' + B.size;
+  for (const [name, size] of A){
+    if (!B.has(name)) return name + ' is missing';
+    if (B.get(name) !== size) return name + ' is a different size';
+  }
+  return null;
+}
+
 class VaultStore {
   /*
    * prefsFile sits in userData rather than in a vault. Your name, theme and volume are
@@ -99,6 +126,56 @@ class VaultStore {
     const { id, inner } = this.route(key);
     const store = this.storeFor(id);
     return store ? store.moveSession(inner, groupPath) : false;
+  }
+
+  /* ---------- folders ---------- */
+  /* Straight through to the vault that owns them; the paths are that vault's own. */
+  folders(id){ const s = this.storeFor(id); return s ? s.folders() : []; }
+  createFolder(id, rel){ const s = this.storeFor(id); return s ? s.createFolder(rel) : false; }
+  renameFolder(id, a, b){ const s = this.storeFor(id); return s ? s.renameFolder(a, b) : false; }
+  removeFolder(id, rel){ const s = this.storeFor(id); return s ? s.removeFolder(rel) : false; }
+
+  /*
+   * Move a session into another vault.
+   *
+   * This copies the session's directory rather than reading the notes out of one store
+   * and writing them into the other, and the reason matters: _writeSession keeps only
+   * the current coach's notes whole and reduces everybody else's to a stub carrying his
+   * own comments. A read-and-write move would therefore drop every other coach's work on
+   * the floor. Copying the directory takes all of their files with it.
+   *
+   * Nothing is removed until the copy has been checked file by file.
+   */
+  moveSessionToVault(key, toVaultId, groupPath){
+    const { id: fromId, inner } = this.route(key);
+    if (!fromId || fromId === toVaultId) return { ok: false, reason: 'same' };
+
+    const from = this.storeFor(fromId), to = this.storeFor(toVaultId);
+    if (!from || !to) return { ok: false, reason: 'unavailable' };
+
+    /* Combining two copies of one session is a merge, and guessing at one here would be
+       worse than saying so: Export and Import already does it, by note id. */
+    if (to.get(inner) !== null) return { ok: false, reason: 'exists' };
+
+    const src = from.sessionPath(inner);
+    if (!src) return { ok: false, reason: 'missing' };
+
+    const dst = to.freeSessionPath(path.basename(src), groupPath);
+    try { fs.cpSync(src, dst, { recursive: true }); }
+    catch (e) { return { ok: false, reason: 'copy failed: ' + e.message }; }
+
+    const diff = compareTrees(src, dst);
+    if (diff){
+      try { fs.rmSync(dst, { recursive: true, force: true }); } catch (e) {}
+      return { ok: false, reason: 'the copy did not match: ' + diff };
+    }
+
+    try { fs.rmSync(src, { recursive: true, force: true }); }
+    catch (e) { return { ok: false, reason: 'copied, but the original could not be removed' }; }
+
+    from.rescan();
+    to.rescan();
+    return { ok: true, key: withVault(toVaultId, inner) };
   }
 
   /* Settings used to live in the first vault. Read them from there once, so upgrading

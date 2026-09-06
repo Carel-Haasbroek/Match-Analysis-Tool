@@ -36,5 +36,13 @@ contextBridge.exposeInMainWorld('desktop', {
   vaultAdd: () => ipcRenderer.invoke('vault:add'),
   vaultRename: (id, name) => ipcRenderer.invoke('vault:rename', id, name),
   vaultRemove: (id) => ipcRenderer.invoke('vault:remove', id),
-  vaultDefault: (id) => ipcRenderer.invoke('vault:default', id)
+  vaultDefault: (id) => ipcRenderer.invoke('vault:default', id),
+
+  /* folders, and moving a session into another vault */
+  folders: (id) => ipcRenderer.invoke('vault:folders', id),
+  folderCreate: (id, rel) => ipcRenderer.invoke('folder:create', id, rel),
+  folderRename: (id, a, b) => ipcRenderer.invoke('folder:rename', id, a, b),
+  folderRemove: (id, rel) => ipcRenderer.invoke('folder:remove', id, rel),
+  moveToVault: (key, toVaultId, groupPath) =>
+    ipcRenderer.invoke('session:toVault', key, toVaultId, groupPath)
 });

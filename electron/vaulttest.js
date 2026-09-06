@@ -206,7 +206,29 @@ app.whenReady().then(() => {
       check('and its notes read straight out of the folder', inherited === 2, String(inherited));
 
       /* ---------- 5. renaming, and forgetting without deleting ---------- */
-      await run(win, `window.desktop.vaultRename(${JSON.stringify(adopted.vault.id)}, 'From Marius')`);
+      /* Through the pencil, not the API behind it: calling vaultRename directly would
+         have gone on passing while the button did nothing, which is exactly what
+         happened when window.prompt turned out to throw in Electron. */
+      await run(win, `document.getElementById('settings-btn').click()`);
+      await wait(600);
+      await run(win, `(function(){
+        var rows = [].slice.call(document.querySelectorAll('#vault-list .vault-row'));
+        var row = rows.filter(function(r){
+          return r.querySelector('.vault-name').textContent === 'Handed over'; })[0];
+        row.querySelectorAll('button')[row.querySelectorAll('button').length - 2].click();
+      })()`);
+      await wait(500);
+      const asked = await run(win, `document.getElementById('ask-modal').classList.contains('open')`);
+      check('renaming a vault asks for the name in the app', asked, String(asked));
+      await run(win, `(function(){
+        document.getElementById('ask-input').value = 'From Marius';
+        document.getElementById('ask-form').dispatchEvent(
+          new Event('submit', { bubbles: true, cancelable: true }));
+      })()`);
+      await wait(900);
+      await run(win, `document.getElementById('settings-close').click()`);
+      await wait(300);
+
       list = await run(win, `window.desktop.vaults()`);
       check('a vault can be renamed',
             list.some((v) => v.name === 'From Marius'), JSON.stringify(list.map((v) => v.name)));
