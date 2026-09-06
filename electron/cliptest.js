@@ -179,12 +179,22 @@ app.whenReady().then(() => {
         URL.createObjectURL = function(b){ if (b instanceof Blob && b.type === 'application/json') cap = b; return oc.call(URL, b); };
         var ac = HTMLAnchorElement.prototype.click; HTMLAnchorElement.prototype.click = function(){};
         document.getElementById('share-clip-btn').click();
-        await new Promise(function(r){ setTimeout(r, 800); });
+        /* Wait for the blob rather than for a fixed 800ms. On a busy machine - six
+           Electron suites into a run - the write took longer than that, cap stayed
+           null, and the next line parsed null and threw. The test failed, the app was
+           fine, and it only ever happened in a batch. */
+        for (var i = 0; i < 80 && !cap; i++){
+          await new Promise(function(r){ setTimeout(r, 100); });
+        }
         URL.createObjectURL = oc; HTMLAnchorElement.prototype.click = ac;
         return cap ? await cap.text() : null;
       })()`);
       const parsed = shared ? JSON.parse(shared) : null;
-      check('share writes a clip file', !!parsed && parsed.format === 'video-notes-clip');
+      check('share writes a clip file', !!parsed && parsed.format === 'video-notes-clip',
+            shared === null ? 'nothing was written' : String(shared).slice(0, 80));
+      /* Everything below reads this file; carrying on without it reports one real
+         failure as ten, and buries which one actually went wrong. */
+      if (!parsed) throw new Error('share produced no clip file - nothing below can run');
       check('clip file carries the video url and a deep link to the segment',
             parsed && parsed.url && /[?&]t=\d+/.test(parsed.sourceUrl || ''),
             parsed && parsed.sourceUrl);
