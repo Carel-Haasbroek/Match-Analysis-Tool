@@ -174,6 +174,12 @@ a few minutes.
 Tagging a version is what publishes it. A workflow builds on Windows and uploads both exes
 to a GitHub Release, so binaries stay out of the repo and clones stay small.
 
+The two exes are the only things the workflow uploads — it names them rather than letting
+electron-builder publish everything it produced, which would add `latest.yml` and a
+`.blockmap` that only an auto-updater reads. The **Source code (zip)** and **(tar.gz)**
+links on the release are GitHub's own, generated from the tag; there is no way to switch
+them off.
+
 ```bash
 npm version 1.0.1                        # bumps package.json, commits, tags v1.0.1
 git push origin master --follow-tags     # the tag is what triggers the build
