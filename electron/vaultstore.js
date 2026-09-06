@@ -157,6 +157,13 @@ class VaultStore {
        worse than saying so: Export and Import already does it, by note id. */
     if (to.get(inner) !== null) return { ok: false, reason: 'exists' };
 
+    /* Two folders in this vault hold this session. Copying one would take half the
+       notes to the other vault and leave half behind, so this refuses rather than
+       picking - reading merges them, but a move has to choose a directory. */
+    if (from.duplicateDirs && from.duplicateDirs(inner).length){
+      return { ok: false, reason: 'duplicates' };
+    }
+
     const src = from.sessionPath(inner);
     if (!src) return { ok: false, reason: 'missing' };
 

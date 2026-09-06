@@ -275,6 +275,101 @@ function main(){
   ok('and it is listed by keys()',
      scanning.keys().indexOf('vnotes:theirs.mp4_3') >= 0, scanning.keys().join(', '));
 
+  /*
+   * One session, two folders.
+   *
+   * A vault copied by hand, or a folder moved while a copy stayed behind, leaves two
+   * directories carrying the same key. rescan used to keep whichever it walked last,
+   * so the notes in the other one were on disk and invisible - which is how five notes
+   * went missing from a real vault without anything appearing to be wrong.
+   */
+  console.log('\none session, two folders');
+
+  const dupRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'vn-duptest-'));
+  const DKEY = 'vnotes:linc.mp4_7';
+
+  const writeNotes = (dir, notes) => {
+    fs.mkdirSync(dir, { recursive: true });
+    fs.writeFileSync(path.join(dir, 'notes.carel-7f3a.json'), JSON.stringify({
+      key: DKEY, author: 'carel-7f3a', saved: new Date().toISOString(), notes: notes
+    }, null, 2));
+  };
+
+  /* the folder the store will write to: walked first, so it becomes canonical */
+  writeNotes(path.join(dupRoot, 'Linc'), [
+    { id: 'a', time: 1, text: 'in both', by: 'carel-7f3a' },
+    { id: 'b', time: 2, text: 'in both too', by: 'carel-7f3a' }
+  ]);
+  /* the copy left behind, with a note the first one has never had */
+  const nested = path.join(dupRoot, 'Sub kings', 'Linc');
+  writeNotes(nested, [
+    { id: 'a', time: 1, text: 'in both', by: 'carel-7f3a' },
+    { id: 'c', time: 3, text: 'only in the second folder', by: 'carel-7f3a',
+      image: { file: 'pic.png' } }
+  ]);
+  fs.mkdirSync(path.join(nested, 'drawings'), { recursive: true });
+  fs.writeFileSync(path.join(nested, 'drawings', 'pic.png'), Buffer.from([1, 2, 3, 4]));
+
+  const dup = new FolderStore(dupRoot, 'carel-7f3a');
+  const dupNotes = () => JSON.parse(dup.get(DKEY) || '[]');
+
+  eq('both folders are found for the one key', dup.duplicateDirs(DKEY).length, 1);
+  eq('reading gives every note from both', dupNotes().length, 3);
+  ok('including the one only the second folder has',
+     !!byId(dupNotes(), 'c'), JSON.stringify(dupNotes().map((n) => n.id)));
+  ok('and its drawing, which lives in that folder too',
+     /^data:image\/png;base64,/.test((byId(dupNotes(), 'c') || {}).image || ''),
+     JSON.stringify((byId(dupNotes(), 'c') || {}).image));
+
+  /* The write goes to one folder. What must not happen is the other folder's notes
+     being read as deletions and tombstoned, which is what diffing against a single
+     folder would have done. */
+  dup.set(DKEY, JSON.stringify(dupNotes()));
+  eq('saving keeps all three', dupNotes().length, 3);
+  ok('and wrote no tombstones', !fs.existsSync(path.join(dupRoot, 'Linc', 'deleted.carel-7f3a.json')) &&
+     !fs.existsSync(path.join(nested, 'deleted.carel-7f3a.json')));
+
+  /* Deleting still has to work, across both folders. */
+  dup.set(DKEY, JSON.stringify(dupNotes().filter((n) => n.id !== 'c')));
+  eq('deleting a note that came from the other folder sticks', dupNotes().length, 2);
+  ok('and it stays gone on a fresh open',
+     new FolderStore(dupRoot, 'carel-7f3a').get(DKEY).indexOf('"c"') < 0);
+
+  /* ...and undeleting, which is the half that is easy to forget. */
+  dup.set(DKEY, JSON.stringify(dupNotes().concat([{ id: 'c', time: 3, text: 'back', by: 'carel-7f3a' }])));
+  eq('restoring it brings it back', dupNotes().length, 3);
+
+  /* A tombstone in the folder that is not written to still has to be cleared when the
+     note comes back, or the restore would last exactly one read. */
+  fs.writeFileSync(path.join(nested, 'deleted.carel-7f3a.json'), JSON.stringify(['b']));
+  eq('a tombstone in the other folder hides the note', dupNotes().length, 2);
+  dup.set(DKEY, JSON.stringify(dupNotes().concat([{ id: 'b', time: 2, text: 'back too', by: 'carel-7f3a' }])));
+  eq('restoring it clears the tombstone in that folder too', dupNotes().length, 3);
+  ok('and it survives a fresh open',
+     JSON.parse(new FolderStore(dupRoot, 'carel-7f3a').get(DKEY) || '[]').length === 3);
+
+  /* Trash and summaries live in folders too. */
+  fs.writeFileSync(path.join(nested, 'trash.carel-7f3a.json'),
+    JSON.stringify([{ id: 'z', deleted: 1, text: 'binned' }]));
+  ok('trash in the second folder is listed by keys()',
+     dup.keys().indexOf('vnotes:trash:' + DKEY) >= 0, dup.keys().join(', '));
+  ok('and can be read', (dup.get('vnotes:trash:' + DKEY) || '').indexOf('binned') >= 0);
+
+  fs.writeFileSync(path.join(nested, 'summary.marius-2b91.md'), 'their summary');
+  ok('a summary only the second folder has is found',
+     (dup.get('vnotes:summary:' + DKEY) || '').indexOf('their summary') >= 0,
+     String(dup.get('vnotes:summary:' + DKEY)));
+
+  /* Deleting the session must clear this coach out of both folders, or the copy left
+     behind would put the notes back on the next read. */
+  dup.delete(DKEY);
+  ok('deleting the session empties both folders',
+     !fs.existsSync(path.join(dupRoot, 'Linc')) && !fs.existsSync(nested),
+     'Linc: ' + fs.existsSync(path.join(dupRoot, 'Linc')) + ', nested: ' + fs.existsSync(nested));
+  ok('and it reads back as gone', dup.get(DKEY) === null, String(dup.get(DKEY)));
+
+  fs.rmSync(dupRoot, { recursive: true, force: true });
+
   fs.rmSync(root, { recursive: true, force: true });
   fs.rmSync(legacyRoot, { recursive: true, force: true });
   fs.rmSync(fresh, { recursive: true, force: true });

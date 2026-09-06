@@ -134,6 +134,8 @@ class FolderStore {
     fs.mkdirSync(this.root, { recursive: true });
     this.pathsFile = path.join(this.root, 'paths.json');
     this.paths = this._readPaths();
+    /* key -> any further folders holding the same session; see rescan */
+    this.extra = {};
     this.others = this._readOthers();
     /* Until the renderer says who is here, writes land in a neutral file rather than
        being guessed at. It sends the name at boot, before anything can be saved. */
@@ -162,15 +164,27 @@ class FolderStore {
         if (!st.isDirectory()) continue;
         const childRel = rel ? rel + path.sep + name : name;
         const key = this._keyInFolder(full);
-        if (key) found[key] = childRel;
+        if (key) (found[key] = found[key] || []).push(childRel);
         walk(full, childRel);
       }
     };
     walk(this.root, '');
 
+    /*
+     * Two folders can hold the same key - a vault copied by hand, or a folder moved
+     * while another copy stayed behind. This used to keep whichever was walked last
+     * and say nothing, so the notes in the other one sat on disk and invisible.
+     * Everything is kept now: paths is where writes go, extra is what else is read.
+     */
+    this.extra = {};
     let changed = false;
     for (const key of Object.keys(found)){
-      if (this.paths[key] !== found[key]){ this.paths[key] = found[key]; changed = true; }
+      const rels = found[key];
+      /* keep writing where this store already wrote, so a rescan never moves it */
+      const canonical = rels.indexOf(this.paths[key]) >= 0 ? this.paths[key] : rels[0];
+      if (this.paths[key] !== canonical){ this.paths[key] = canonical; changed = true; }
+      const others = rels.filter((r) => r !== canonical);
+      if (others.length) this.extra[key] = others;
     }
     /* a folder that has gone stops being claimed, but nothing on disk is touched */
     for (const key of Object.keys(this.paths)){
@@ -353,16 +367,16 @@ class FolderStore {
     if (key === PREFS_KEY) return this._readJsonFile('prefs.json');
 
     if (key.startsWith(SUMMARY_PREFIX)){
-      const dir = this._existingDir(key.slice(SUMMARY_PREFIX.length));
-      if (!dir) return null;
-      return this._readSummary(dir);
+      const dirs = this._allDirs(key.slice(SUMMARY_PREFIX.length));
+      if (!dirs.length) return null;
+      return this._readSummaryAcross(dirs);
     }
 
     if (key.startsWith(TRASH_PREFIX)){
-      const dir = this._existingDir(key.slice(TRASH_PREFIX.length));
-      if (!dir) return null;
+      const dirs = this._allDirs(key.slice(TRASH_PREFIX.length));
+      if (!dirs.length) return null;
       const all = [];
-      for (const name of listDir(dir)){
+      for (const dir of dirs) for (const name of listDir(dir)){
         if (name !== 'trash.json' && !TRASH_FILE.test(name)) continue;
         const list = parseJson(readIfPresent(path.join(dir, name)));
         if (Array.isArray(list)) for (const item of list) all.push(item);
@@ -373,37 +387,46 @@ class FolderStore {
     }
 
     /* a session's notes, or a plain value stored under an unrecognised key */
-    const dir = this._existingDir(key);
-    if (!dir){
+    const dirs = this._allDirs(key);
+    if (!dirs.length){
       const other = readIfPresent(this._otherFile(key));
       return other ? other.toString('utf8') : null;
     }
-    const notes = this._readNotes(dir);
+    const notes = this._readNotesAcross(dirs);
     if (!notes) return null;
-    return JSON.stringify(this._inlineImages(dir, notes));
+    return JSON.stringify(this._inlineImages(dirs, notes));
   }
 
-  /* Every coach's file in this session, unioned, with anyone's deletions honoured. */
-  _readNotes(dir){
+  /*
+   * Every coach's file in this session, unioned, with anyone's deletions honoured -
+   * across every folder that holds the session, for the same reason it is across every
+   * coach: a file nobody reads is work that has quietly vanished.
+   */
+  _readNotesAcross(dirs){
     const lists = [];
+    const gone = new Set();
     let any = false;
 
-    const legacy = parseJson(readIfPresent(path.join(dir, 'session.json')));
-    if (legacy){ lists.push(legacy.notes || []); any = true; }
+    for (const dir of dirs){
+      const legacy = parseJson(readIfPresent(path.join(dir, 'session.json')));
+      if (legacy){ lists.push(legacy.notes || []); any = true; }
 
-    for (const name of listDir(dir)){
-      if (!NOTES_FILE.test(name)) continue;
-      const doc = parseJson(readIfPresent(path.join(dir, name)));
-      if (!doc) continue;
-      lists.push(Array.isArray(doc) ? doc : (doc.notes || []));
-      any = true;
+      for (const name of listDir(dir)){
+        if (!NOTES_FILE.test(name)) continue;
+        const doc = parseJson(readIfPresent(path.join(dir, name)));
+        if (!doc) continue;
+        lists.push(Array.isArray(doc) ? doc : (doc.notes || []));
+        any = true;
+      }
+      for (const id of this._tombstones(dir)) gone.add(id);
     }
     if (!any) return null;
 
     const merged = unionNotes(lists);
-    const gone = this._tombstones(dir);
     return gone.size ? merged.filter((n) => !gone.has(n.id)) : merged;
   }
+
+  _readNotes(dir){ return this._readNotesAcross([dir]); }
 
   /* A deletion has to travel too, or a note another coach removed would come back from
      their file on the next read. The note itself stays in their trash. */
@@ -422,23 +445,27 @@ class FolderStore {
    * wins when you have one; otherwise you see whoever wrote most recently, and if you
    * edit it, it becomes yours as well. Nobody's file is ever written by anyone else.
    */
-  _readSummary(dir){
-    let best = null;
-    const mine = path.join(dir, this._mine('summary', '.md'));
+  _readSummaryAcross(dirs){
+    let best = null, mine = null;
+    const mineName = this._mine('summary', '.md');
 
-    for (const name of listDir(dir)){
-      const isMine = name === path.basename(mine);
-      if (name !== 'summary.md' && !SUMMARY_FILE.test(name)) continue;
-      const md = readIfPresent(path.join(dir, name));
-      if (!md) continue;
-      const metaName = name.replace(/\.md$/i, '.meta.json');
-      const meta = parseJson(readIfPresent(path.join(dir, metaName)));
-      const rec = { text: md.toString('utf8'), updated: (meta && meta.updated) || 0 };
-      if (isMine) return JSON.stringify(rec);
-      if (!best || rec.updated > best.updated) best = rec;
+    for (const dir of dirs){
+      for (const name of listDir(dir)){
+        if (name !== 'summary.md' && !SUMMARY_FILE.test(name)) continue;
+        const md = readIfPresent(path.join(dir, name));
+        if (!md) continue;
+        const metaName = name.replace(/\.md$/i, '.meta.json');
+        const meta = parseJson(readIfPresent(path.join(dir, metaName)));
+        const rec = { text: md.toString('utf8'), updated: (meta && meta.updated) || 0 };
+        if (name === mineName){ if (!mine || rec.updated >= mine.updated) mine = rec; }
+        else if (!best || rec.updated > best.updated) best = rec;
+      }
     }
-    return best ? JSON.stringify(best) : null;
+    const chosen = mine || best;
+    return chosen ? JSON.stringify(chosen) : null;
   }
+
+  _readSummary(dir){ return this._readSummaryAcross([dir]); }
 
   /* Each coach keeps their own index; they are merged by key, newest opening winning. */
   _readLibrary(){
@@ -520,7 +547,8 @@ class FolderStore {
     for (const k of Object.keys(this.others)) out.push(k);
 
     for (const key of Object.keys(this.paths)){
-      const names = listDir(path.join(this.root, this.paths[key]));
+      const names = [];
+      for (const dir of this._allDirs(key)) for (const n of listDir(dir)) names.push(n);
       if (names.some((n) => n === 'session.json' || NOTES_FILE.test(n))) out.push(key);
       if (names.some((n) => n === 'summary.md' || SUMMARY_FILE.test(n))) out.push(SUMMARY_PREFIX + key);
       if (names.some((n) => n === 'trash.json' || TRASH_FILE.test(n))) out.push(TRASH_PREFIX + key);
@@ -535,23 +563,30 @@ class FolderStore {
    * are left - which, in a vault nobody shares, is always.
    */
   delete(key){
-    const dir = this._existingDir(key);
-    if (!dir) return false;
+    const dirs = this._allDirs(key);
+    if (!dirs.length) return false;
 
-    for (const name of listDir(dir)){
-      const mine = name === this._mine('notes') || name === this._mine('deleted') ||
-                   name === this._mine('trash') || name === this._mine('summary', '.md') ||
-                   name === this._mine('summary', '.meta.json');
-      if (!mine) continue;
-      try { fs.unlinkSync(path.join(dir, name)); } catch (e) {}
+    /* Every folder holding this session, or deleting one would leave the other to
+       bring the notes back on the next read. */
+    let emptied = 0;
+    for (const dir of dirs){
+      for (const name of listDir(dir)){
+        const mine = name === this._mine('notes') || name === this._mine('deleted') ||
+                     name === this._mine('trash') || name === this._mine('summary', '.md') ||
+                     name === this._mine('summary', '.meta.json');
+        if (!mine) continue;
+        try { fs.unlinkSync(path.join(dir, name)); } catch (e) {}
+      }
+
+      const left = listDir(dir);
+      if (left.some((n) => n === 'session.json' || NOTES_FILE.test(n))) continue;
+      try { fs.rmSync(dir, { recursive: true, force: true }); emptied++; } catch (e) {}
     }
 
-    const left = listDir(dir);
-    const someoneElse = left.some((n) => n === 'session.json' || NOTES_FILE.test(n));
-    if (someoneElse) return true;                 /* their notes stay, and so does the folder */
+    if (emptied < dirs.length) return true;       /* their notes stay, and so do those folders */
 
-    try { fs.rmSync(dir, { recursive: true, force: true }); } catch (e) { return false; }
     delete this.paths[key];
+    delete this.extra[key];
     this._savePaths();
     return true;
   }
@@ -583,6 +618,25 @@ class FolderStore {
     return fs.existsSync(dir) ? dir : null;
   }
 
+  /*
+   * Every folder holding this session, the one written to first. Almost always one.
+   * Reading uses all of them; writing uses only the first, so a session that has two
+   * folders converges on one rather than growing a third.
+   */
+  _allDirs(key){
+    const first = this._existingDir(key);          /* rescans on a miss */
+    if (!first) return [];
+    const out = [first];
+    for (const rel of (this.extra[key] || [])){
+      const dir = path.join(this.root, rel);
+      if (fs.existsSync(dir) && out.indexOf(dir) < 0) out.push(dir);
+    }
+    return out;
+  }
+
+  /* The folders beyond the first, for a caller that must not silently take one. */
+  duplicateDirs(key){ return this._allDirs(key).slice(1); }
+
   /* A readable folder name, taken from the library entry when there is one. */
   _hintFor(key){
     const raw = this._readLibrary();
@@ -608,7 +662,10 @@ class FolderStore {
     const drawings = path.join(dir, 'drawings');
     fs.mkdirSync(drawings, { recursive: true });
 
-    const before = this._readNotes(dir) || [];
+    /* What the renderer was given, which is every folder's notes and not just this
+       one's. Diffing against less would read the other folder's notes as deletions and
+       tombstone them, which is the exact opposite of the point. */
+    const before = this._readNotesAcross(this._allDirs(key)) || [];
     const keep = new Set();
 
     const slim = notes.map((n, i) => {
@@ -676,6 +733,20 @@ class FolderStore {
       else { try { fs.unlinkSync(file); } catch (e) {} }
     }
 
+    /* A tombstone of mine in another folder for this same session has to come off as
+       well. Tombstones are read from every folder, so leaving one there would show a
+       restored note once and lose it again on the next read. */
+    for (const other of this._allDirs(key)){
+      if (other === dir) continue;
+      const f = path.join(other, this._mine('deleted'));
+      const list = parseJson(readIfPresent(f));
+      if (!Array.isArray(list) || !list.length) continue;
+      const left = list.filter((id) => !now.has(id));
+      if (left.length === list.length) continue;
+      if (left.length) writeAtomic(f, JSON.stringify(left, null, 2));
+      else { try { fs.unlinkSync(f); } catch (e) {} }
+    }
+
     /* drop drawings whose note has gone, so deleting a note reclaims its file */
     for (const f of fs.readdirSync(drawings)){
       if (!keep.has(f) && !f.endsWith('.tmp')){
@@ -684,13 +755,20 @@ class FolderStore {
     }
   }
 
-  _inlineImages(dir, notes){
+  _inlineImages(dirs, notes){
+    /* A note read from a second folder points at that folder's drawings, so each file
+       is looked for in all of them rather than only the one written to. */
+    const list = Array.isArray(dirs) ? dirs : [dirs];
     return notes.map((n) => {
       const out = Object.assign({}, n);
       ['image', 'overlayImage'].forEach((field) => {
         const ref = n[field];
         if (!ref || typeof ref !== 'object' || !ref.file) return;
-        const buf = readIfPresent(path.join(dir, 'drawings', ref.file));
+        let buf = null;
+        for (const dir of list){
+          buf = readIfPresent(path.join(dir, 'drawings', ref.file));
+          if (buf) break;
+        }
         if (!buf){ delete out[field]; return; }
         const ext = path.extname(ref.file).slice(1).toLowerCase();
         const mime = ext === 'jpg' ? 'image/jpeg' : 'image/' + ext;
