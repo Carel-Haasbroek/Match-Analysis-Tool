@@ -1175,6 +1175,9 @@
         setNotice(r && r.reason === 'exists'
           ? vaultName(toVault) + ' already has that session. Use Export all notes and ' +
             'Import backup to combine the two.'
+          : r && r.reason === 'duplicates'
+          ? 'That session has two folders in this vault. Both are read, so nothing is ' +
+            'missing, but a move has to pick one - open the vault folder and merge them first.'
           : 'That could not be moved: ' + ((r && r.reason) || 'unknown'), 12000);
         return;
       }
