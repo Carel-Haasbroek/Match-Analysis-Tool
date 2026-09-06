@@ -59,19 +59,51 @@ jobs:
 
       # Not `npm run dist`: that appends the local tidy-up step, which has nothing to
       # do here and would run after publishing anyway.
+      - name: Build
+        run: npx electron-builder --publish never
+
+      # Uploaded by name, rather than by electron-builder's own publisher.
       #
-      # electron-builder's GitHub publisher drafts by default, which looks exactly like
-      # a silent failure: the run goes green, and the assets sit on a draft release the
-      # public never sees. package.json sets releaseType to "release" so they land on
-      # the real one.
-      - name: Build and publish
-        run: npx electron-builder --publish always
+      # The publisher sends everything the build produced - latest.yml and a .blockmap
+      # alongside the two exes - and both of those are read only by electron-updater,
+      # which this app does not use. Naming the files is the only way to say exactly
+      # what a release contains. (package.json keeps its publish block: electron-builder
+      # still reads it for artifact metadata, it just no longer does the uploading.)
+      #
+      # What cannot be removed is "Source code (zip)" and "Source code (tar.gz)".
+      # GitHub generates those from the tag itself, on every release, and offers no way
+      # to turn them off.
+      #
+      # Re-runnable on purpose: a tag pushed from the web UI may already have a release,
+      # and a run repeated by hand must not fail the second time.
+      - name: Publish the installer and the portable exe
+        shell: bash
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          shopt -s nullglob
+          setup=(dist/*Setup*.exe)
+          portable=(dist/*portable*.exe)
+          if [ ${#setup[@]} -ne 1 ] || [ ${#portable[@]} -ne 1 ]; then
+            echo "expected exactly one installer and one portable exe. dist holds:"
+            ls -l dist/ || echo "  no dist folder at all - the build produced nothing"
+            exit 1
+          fi
+          ls -lh "${setup[0]}" "${portable[0]}"
+          if gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1; then
+            gh release upload "$GITHUB_REF_NAME" "${setup[0]}" "${portable[0]}" --clobber
+          else
+            gh release create "$GITHUB_REF_NAME" "${setup[0]}" "${portable[0]}" \
+              --title "$GITHUB_REF_NAME" --generate-notes
+          fi
 
-      # A green run that published nothing is the failure mode worth catching, so say
-      # out loud what was built and how big it is.
-      - name: What was built
+      # A green run that published nothing is the failure worth catching, so read back
+      # what is actually on the release rather than what was in dist.
+      - name: What was published
         if: always()
         shell: bash
-        run: ls -lh dist/*.exe dist/*.yml 2>/dev/null || echo "no artifacts in dist/"
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release view "$GITHUB_REF_NAME" --json assets \
+            --jq '.assets[] | "  \(.name)  \(.size) bytes"' || echo "no release to read"
