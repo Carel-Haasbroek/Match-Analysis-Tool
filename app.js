@@ -1044,7 +1044,9 @@
         dropInto(loose, { vaultId: onlyVault(), folder: '' });
         host.appendChild(loose);
       }
-      root.entries.forEach(function(e){ host.appendChild(sessionRow(e, 0)); });
+      root.entries.forEach(function(e){
+        host.appendChild(sessionRow(e, 0, { vaultId: onlyVault(), folder: '' }));
+      });
     }
 
     function node(path, vaultId, folder){
@@ -1113,7 +1115,7 @@
       if (!open) return;
 
       Object.keys(n.kids).sort().forEach(function(k){ drawFolder(n.kids[k], host, depth + 1); });
-      n.entries.forEach(function(e){ host.appendChild(sessionRow(e, depth + 1)); });
+      n.entries.forEach(function(e){ host.appendChild(sessionRow(e, depth + 1, n)); });
     }
   }
 
@@ -1134,9 +1136,18 @@
     });
   }
 
-  function dropInto(el, target){
+  function dropInto(el, target, isRow){
+    /* Dropping a row onto itself, or onto another row already in the same folder, is
+       not a move - saying so with the cursor beats a highlight that promises one. */
+    function inert(){
+      if (!isRow || !dragKey) return false;
+      var entry = entryFor(dragKey);
+      return !!entry && folderOf(entry) === (target.folder || '') &&
+             (entry.vault || onlyVault()) === (target.vaultId || onlyVault());
+    }
     el.addEventListener('dragover', function(e){
       e.preventDefault();
+      if (inert()){ e.dataTransfer.dropEffect = 'none'; return; }
       e.dataTransfer.dropEffect = 'move';
       el.classList.add('drop-into');
     });
@@ -1263,10 +1274,20 @@
     return f ? v + '/' + f : v;
   }
 
-  function sessionRow(entry, depth){
+  /*
+   * A session row is both something you can drag and somewhere you can drop.
+   *
+   * Only the folder's own one-line header used to accept a drop, so letting go over
+   * the sessions inside it - which is most of what a folder looks like on screen -
+   * did nothing at all. Worse with more than one vault, because then the vault's own
+   * row sits directly above the folder and accepts drops too, meaning a near miss
+   * upwards quietly took the session OUT of its folder instead.
+   */
+  function sessionRow(entry, depth, owner){
     var row = renderRow(entry);
     row.style.paddingLeft = (10 + (depth || 0) * 16) + 'px';
     dragOut(row, entry);
+    if (owner) dropInto(row, owner, true);
     return row;
   }
 

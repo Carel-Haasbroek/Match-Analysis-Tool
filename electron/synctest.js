@@ -339,6 +339,33 @@ function main(){
   dup.set(DKEY, JSON.stringify(dupNotes().concat([{ id: 'c', time: 3, text: 'back', by: 'carel-7f3a' }])));
   eq('restoring it brings it back', dupNotes().length, 3);
 
+  /*
+   * The index written before there was one per coach is a snapshot, not a record. It
+   * must lose a tie, or a session nobody has opened since - which is precisely when the
+   * timestamps match - stays pinned to the folder it was in back then.
+   */
+  console.log('\nthe old index does not outrank a coach');
+
+  const tieRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'vn-tietest-'));
+  const TKEY = 'vnotes:tie.mp4_9';
+  fs.writeFileSync(path.join(tieRoot, 'library.json'), JSON.stringify([
+    { key: TKEY, customName: 'Tie', lastOpened: 1000 }
+  ]));
+  fs.writeFileSync(path.join(tieRoot, 'library.carel-7f3a.json'), JSON.stringify([
+    { key: TKEY, customName: 'Tie', folder: 'Comp 2026', lastOpened: 1000 }
+  ]));
+  const tie = new FolderStore(tieRoot, 'carel-7f3a');
+  const tieEntry = JSON.parse(tie.get('vnotes:index') || '[]')[0] || {};
+  eq('on an equal timestamp the coach index wins, not the old one', tieEntry.folder, 'Comp 2026');
+
+  fs.writeFileSync(path.join(tieRoot, 'library.json'), JSON.stringify([
+    { key: TKEY, customName: 'Tie', folder: 'Older', lastOpened: 5000 }
+  ]));
+  const tie2 = new FolderStore(tieRoot, 'carel-7f3a');
+  const tieEntry2 = JSON.parse(tie2.get('vnotes:index') || '[]')[0] || {};
+  eq('but a genuinely newer entry still wins', tieEntry2.folder, 'Older');
+  fs.rmSync(tieRoot, { recursive: true, force: true });
+
   /* A tombstone in the folder that is not written to still has to be cleared when the
      note comes back, or the restore would last exactly one read. */
   fs.writeFileSync(path.join(nested, 'deleted.carel-7f3a.json'), JSON.stringify(['b']));
